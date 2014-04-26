@@ -1,9 +1,11 @@
 var express = require('express');
+var http = require('http');
 var path = require('path');
 var favicon = require('static-favicon');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
+var Consolidate = require('consolidate');
 var bodyParser = require('body-parser');
+var logger = require('morgan');
+var hbs = require('hbs');
 
 var routes = require('./routes/index');
 var users = require('./routes/users');
@@ -11,14 +13,18 @@ var users = require('./routes/users');
 var app = express();
 
 // view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
+app.set('views', __dirname + '/views');
+app.set('view engine', 'html');
+app.engine('html', require('hbs').__express);
+app.set('view options', {layout: false});
+
+// hbs.registerPartials(__dirname + '/views/partials');
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(bodyParser());
+// end view engine setup
 
 app.use(favicon());
 app.use(logger('dev'));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded());
-app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', routes);
@@ -55,8 +61,8 @@ app.use(function(err, req, res, next) {
     });
 });
 
-app.listen(3000, function(){
-  console.log('Express server listening on port ' + 3000);
+app.listen(8080, function(){
+  console.log('Express server listening on port ' + 8080);
 });
 
 module.exports = app;
