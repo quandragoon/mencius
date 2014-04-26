@@ -7,3 +7,10 @@ exports.registerPartial = function(page) {
   var contents = fs.readFileSync(contentFile, 'utf8');
   hbs.registerPartial('content', contents);
 }
+
+exports.registerHeader = function(page) {
+  var contentDir = __dirname.substring(0, __dirname.lastIndexOf('/'));
+  var contentFile = contentDir + '/views/partials/headers/' + page + '.html';
+  var contents = fs.readFileSync(contentFile, 'utf8');
+  hbs.registerPartial('header', contents);
+}
