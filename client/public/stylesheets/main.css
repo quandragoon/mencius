@@ -1,0 +1,98 @@
+@import url(/fonts/clear-sans.css);
+@font-face {
+  font-family: "Intro Inline";
+  src: url("/fonts/Intro-Inline.otf"); }
+
+@font-face {
+  font-family: "SourceSansPro Light";
+  src: url("/fonts/SourceSansPro-Light.ttf"); }
+
+html {
+  height: 100%; }
+
+body {
+  background: url("/img/use_your_illusion.png");
+  font-family: "SourceSansPro Light", Helvetica, Arial, sans-serif;
+  height: 100%; }
+
+h1 {
+  color: white;
+  font-family: "Intro Inline";
+  font-size: 2.5em;
+  font-weight: 200;
+  padding-top: 40px;
+  text-align: center; }
+
+h2 {
+  color: white; }
+
+.team {
+  color: white;
+  padding: 10px 0;
+  text-align: center; }
+  .team li {
+    display: inline-block;
+    margin: 0 5px; }
+    .team li a {
+      color: #707070;
+      text-decoration: none; }
+      .team li a:hover {
+        color: #41a5df;
+        -webkit-transition: color 0.2s ease-in-out;
+        -moz-transition: color 0.2s ease-in-out;
+        -o-transition: color 0.2s ease-in-out;
+        transition: color 0.2s ease-in-out; }
+
+.description {
+  color: white;
+  line-height: 1.2;
+  margin: 30px auto 0;
+  margin-top: 30px;
+  text-align: center;
+  width: 600px; }
+
+.game-container {
+  margin: 50px auto 0;
+  width: 500px; }
+  .game-container .game {
+    display: inline-block;
+    height: 200px;
+    width: 200px; }
+    .game-container .game:first-child {
+      float: left; }
+    .game-container .game:last-child {
+      float: right; }
+  .game-container .game2048 {
+    background: #edc22e;
+    color: #776E65;
+    cursor: pointer;
+    font-family: "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 4em;
+    line-height: 200px;
+    text-align: center;
+    text-decoration: none;
+    vertical-align: middle;
+    -webkit-border-radius: 3px;
+    -moz-border-radius: 3px;
+    border-radius: 3px; }
+    .game-container .game2048:hover {
+      background: #f3d774;
+      -webkit-transition: background 0.2s ease-in-out;
+      -moz-transition: background 0.2s ease-in-out;
+      -o-transition: background 0.2s ease-in-out;
+      transition: background 0.2s ease-in-out; }
+  .game-container .chess {
+    background: #ccc;
+    cursor: pointer;
+    -webkit-border-radius: 3px;
+    -moz-border-radius: 3px;
+    border-radius: 3px; }
+    .game-container .chess:hover {
+      background: #a6a6a6;
+      -webkit-transition: background 0.2s ease-in-out;
+      -moz-transition: background 0.2s ease-in-out;
+      -o-transition: background 0.2s ease-in-out;
+      transition: background 0.2s ease-in-out; }
+    .game-container .chess img {
+      width: 100%;
+      height: auto; }
