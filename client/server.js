@@ -7,10 +7,7 @@ var bodyParser = require('body-parser');
 var logger = require('morgan');
 var hbs = require('hbs');
 
-var routes = require('./routes/index');
-var users = require('./routes/users');
-var chess = require('./routes/chess');
-var game2048 = require('./routes/game2048');
+var routes = require('./routes/router');
 
 var app = express();
 
@@ -29,10 +26,9 @@ app.use(favicon());
 app.use(logger('dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', routes);
-app.use('/users', users);
-app.use('/chess', chess);
-app.use('/2048', game2048);
+app.get('/', routes.index);
+app.get('/chess', routes.chess);
+app.get('/2048', routes.game2048);
 
 /// catch 404 and forwarding to error handler
 app.use(function(req, res, next) {
