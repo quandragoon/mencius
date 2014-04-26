@@ -9,7 +9,11 @@ var hbs = require('hbs');
 
 var routes = require('./routes/router');
 
-var app = express();
+var app = express()
+  , server = http.createServer(app).listen(8080, function(){
+      console.log('Express server listening on port ' + 8080);
+    })
+  , io = require('socket.io').listen(server);
 
 // view engine setup
 app.set('views', __dirname + '/views');
@@ -61,8 +65,12 @@ app.use(function(err, req, res, next) {
     });
 });
 
-app.listen(8080, function(){
-  console.log('Express server listening on port ' + 8080);
+// socket stuff
+io.sockets.on('connection', function (socket) {
+  socket.emit('news', { hello: 'world' });
+  socket.on('my other event', function (data) {
+    console.log(data);
+  });
 });
 
 module.exports = app;
