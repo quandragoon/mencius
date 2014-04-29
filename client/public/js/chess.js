@@ -181,7 +181,117 @@ function ChessManager() {
 
 		// Check if king will be in check if piece is moved
 		
+		// project move and check if king is in danger
+		var nextPos = board.position();
+		nextPos[tmp[1]] = nextPos[tmp[0]];
+		delete nextPos[tmp[0]];
+		if (this.kingInCheck(nextPos, turn)) {
+			alert("check");
+			return false;
+		}
 		return true;
+	}
+
+
+	this.indexToPos = function(x, y) {
+		return 'abcdefgh'[x] + '12345678'[y];
+	}
+
+	this.posToIndex = function(p) {
+		return ['abcdefgh'.indexOf(p[0]), '12345678'.indexOf(p[1])];
+	}
+
+	// Checks given position if white or black king is in check
+	this.kingInCheck = function(position, whiteOrBlack) {
+		var king = (whiteOrBlack == 'w') ? 'wK' : 'bK';
+		var kingPos = '';
+
+		var nPos = [];
+		var kPos = '';
+		// First find king position
+		for (var p in position) {
+			if (position[p][0] === whiteOrBlack) {
+				if (position[p][1] == 'K') {
+					kingPos = p;
+				}
+				continue;
+			}	
+			if (position[p][1] == 'N') {
+				nPos.push(p);
+			}
+			if (position[p][1] == 'K') {
+				kPos = p;
+			}
+		}
+		var kingInd = this.posToIndex(kingPos);
+		// Start from king position, check if can be attacked by any piece
+
+		// King adjacent
+		var xOffset = kingPos.charCodeAt(0) - kPos.charCodeAt(0);
+		var yOffset = kingPos.charCodeAt(1) - kPos.charCodeAt(1);
+		
+		if (Math.abs(xOffset) < 2 && Math.abs(yOffset) < 2) return true;
+
+		// Knights
+		for (var i = 0; i < nPos.length; i++) {
+			nInd = this.posToIndex(nPos);
+			var xOffset = nInd[0] - kingInd[0];
+			var yOffset = nInd[1] - kingInd[1];
+			if ((xOffset * yOffset !== 0) && (Math.abs(xOffset) + Math.abs(yOffset)) === 3) {
+				return true;
+			}
+		}
+
+		// Rooks / Queens along row+col
+		var offsets = [[0,1],[1,0],[0,-1],[-1,0]];
+		for (var i = 0; i < offsets.length; i++) {
+			var off = offsets[i];
+			var x = kingInd[0] + off[0];
+			var y = kingInd[1] + off[1];
+			while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+				var p = this.indexToPos(x, y);
+				x += off[0];
+				y += off[1];
+				if (position[p] === undefined) continue;
+				if (position[p][0] === whiteOrBlack) break;	// Friendly piece
+				if ('RQ'.indexOf(position[p][1]) !== -1) return true;
+			}
+		}	
+
+		// Bishops / Queens
+		offsets = [[1,1],[1,-1],[-1,-1],[-1,1]];
+		for (var i = 0; i < offsets.length; i++) {
+			var off = offsets[i];
+			var x = kingInd[0] + off[0];
+			var y = kingInd[1] + off[1];
+			while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+				var p = this.indexToPos(x, y);
+				x += off[0];
+				y += off[1];
+				if (position[p] === undefined) continue;
+				if (position[p][0] === whiteOrBlack) break;	// Friendly piece
+				if ('BQ'.indexOf(position[p][1]) !== -1) return true;
+			}
+		}	
+
+		// Pawns
+		var offset = 1;
+		if (whiteOrBlack === 'b') {
+			offset = -1;
+		}	
+		var x = kingInd[0] + 1;
+		var y = kingInd[1] + offset;
+		if (x >= 0 && x < 8 && y >= 0 && y < 8) {
+			var p = this.indexToPos(x, y);
+			if (position[p] !== undefined && position[p][0] !== whiteOrBlack && position[p][1] === 'P') return true;
+		}
+		x = kingInd[0] - 1;
+		if (x >= 0 && x < 8 && y >= 0 && y < 8) {
+			var p = this.indexToPos(x, y);
+			if (position[p] !== undefined && position[p][0] !== whiteOrBlack && position[p][1] === 'P') return true;
+		}
+
+		return false;
 	}
 
 	// Checks if castling is valid.
@@ -294,7 +404,35 @@ function ChessManager() {
 
 	// Rook must be in same column or row
 	this.checkRookMovement = function(from, to) {
-		return (from[0] === to[0] || from[1] === to[1]);
+		if (from[0] !== to[0] && from[1] !== to[1]) return false;
+
+		// Check that no pieces in the way
+		var fromInd = this.posToIndex(from);
+		var toInd = this.posToIndex(to);
+		
+		// Same column
+		if (fromInd[0] === toInd[0]) {
+			var dir = (toInd[1] - fromInd[1]) / Math.abs(toInd[1] - fromInd[1]);
+			var a = fromInd[1] + dir;
+			while (a !== toInd[1]) {
+				var p = this.indexToPos(fromInd[0], a);
+				if (pos[p] !== undefined) return false;
+				a += dir;
+			}
+		}
+
+		// Same row
+		if (fromInd[1] === toInd[1]) {
+			var dir = (toInd[0] - fromInd[0]) / Math.abs(toInd[0] - fromInd[0]);
+			var b = fromInd[0] + dir;
+			while (b !== toInd[0]) {
+				var p = this.indexToPos(b, fromInd[1]);
+				if (pos[p] !== undefined) return false;
+				b += dir;
+			}
+		}
+
+		return true;
 	};
 
 	// Knight moves in an L shape
@@ -305,17 +443,34 @@ function ChessManager() {
 		var xOffset = from.charCodeAt(0) - to.charCodeAt(0);
 		var yOffset = from.charCodeAt(1) - to.charCodeAt(1);
 		
-		return ((Math.abs(xOffset) + Math.abs(yOffset)) === 3);
+		return ((xOffset * yOffset !== 0) && (Math.abs(xOffset) + Math.abs(yOffset)) === 3);
 	};
 
 	// Bishop moves in a diagonal
 	this.checkBishopMovement = function(from, to) {
 		// Valid offsets are row +/- n, col +/- n
 
-		var xOffset = from.charCodeAt(0) - to.charCodeAt(0);
-		var yOffset = from.charCodeAt(1) - to.charCodeAt(1);
+		var xOffset = to.charCodeAt(0) - from.charCodeAt(0);
+		var yOffset = to.charCodeAt(1) - from.charCodeAt(1);
 		
-		return (Math.abs(xOffset) === Math.abs(yOffset));
+		if (Math.abs(xOffset) !== Math.abs(yOffset)) return false;
+
+		// Check that no pieces in the way
+		var fromInd = this.posToIndex(from);
+		var toInd = this.posToIndex(to);
+
+		var offset = [xOffset/Math.abs(xOffset), yOffset/Math.abs(yOffset)];
+		var x = fromInd[0] + offset[0];
+		var y = fromInd[1] + offset[1];
+
+		while (x !== toInd[0] || y !== toInd[1]) {
+			var p = this.indexToPos(x, y);
+			if (pos[p] !== undefined) return false;
+			x += offset[0];
+			y += offset[1];
+		}
+
+		return true;
 	};
 
 	// Queen moves like rook or bishop
