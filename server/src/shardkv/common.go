@@ -1,19 +1,25 @@
-package kvpaxos
-
+package shardkv
 import "hash/fnv"
 import "time"
+
+//
+// Sharded key/value server.
+// Lots of replica groups, each running op-at-a-time paxos.
+// Shardmaster decides which group serves each shard.
+// Shardmaster may change shard assignment from time to time.
+//
+// You will have to modify these definitions.
+//
 
 const (
   OK = "OK"
   ErrNoKey = "ErrNoKey"
-  ErrNoAgreement = "ErrNoAgreement"
-  PUT = "PUT"
-  GET = "GET"
+  ErrWrongGroup = "ErrWrongGroup"
 )
+
 type Err string
 
 type PutArgs struct {
-  // You'll have to add definitions here.
   Key string
   Value string
   DoHash bool  // For PutHash
@@ -22,6 +28,7 @@ type PutArgs struct {
   // otherwise RPC will break.
   ClientID int64
   RequestTime time.Time
+
 }
 
 type PutReply struct {
@@ -32,7 +39,6 @@ type PutReply struct {
 type GetArgs struct {
   Key string
   // You'll have to add definitions here.
-
   ClientID int64
   RequestTime time.Time
 }
@@ -40,6 +46,20 @@ type GetArgs struct {
 type GetReply struct {
   Err Err
   Value string
+}
+
+type UpdateArgs struct {
+  Num int
+  Shard int
+  Group int64
+  Server int
+}
+
+type UpdateReply struct {
+  KeyValues map[string]RequestValue
+  ClientPut map[int64]DuplicatePut
+  ClientGet map[int64]DuplicateGet
+  Err Err
 }
 
 type DuplicatePut struct {
@@ -57,3 +77,4 @@ func hash(s string) uint32 {
   h.Write([]byte(s))
   return h.Sum32()
 }
+

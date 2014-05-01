@@ -3,33 +3,21 @@ package kvpaxos
 import "net/rpc"
 import "fmt"
 import "time"
-import "crypto/rand"
-import "math/big"
 
 type Clerk struct {
   servers []string
   // You will have to modify this struct.
 
-  id int64
-  curServer int
+  clerkID int64
 }
 
 
 func MakeClerk(servers []string) *Clerk {
   ck := new(Clerk)
   ck.servers = servers
+  ck.clerkID = nrand()
   // You'll have to add code here.
-
-  ck.id = nrand()
-  ck.curServer = 0
   return ck
-}
-
-func nrand() int64 {
-  max := big.NewInt(int64(1) << 62)
-  bigx, _ := rand.Int(rand.Reader, max)
-  x := bigx.Int64()
-  return x
 }
 
 //
@@ -71,20 +59,20 @@ func call(srv string, rpcname string,
 // keeps trying forever in the face of all other errors.
 //
 func (ck *Clerk) Get(key string) string {
-  args := &GetArgs{key, ck.id, time.Now()}
-  var reply GetReply
-  for reply.Err != OK && reply.Err != ErrNoKey {
-    call(ck.servers[ck.curServer], "KVPaxos.Get", args, &reply)
-    if reply.Err != OK {
-      ck.curServer = (ck.curServer + 1) % len(ck.servers)
-    }
-    time.Sleep(50)
-  }
+  args := &GetArgs{Key: key, 
+                   ClientID: ck.clerkID,
+                   RequestID: time.Now().UnixNano()}
 
-  if reply.Err == OK {
-    return reply.Value
-  } else {
-    return ""
+  serverIndex := 0
+  for {
+    var reply GetReply
+    rpc := call(ck.servers[serverIndex], "KVPaxos.Get", args, &reply)
+
+    if rpc {
+      return reply.Value
+    } else {
+      serverIndex = (serverIndex + 1) % len(ck.servers)
+    }
   }
 }
 
@@ -93,20 +81,22 @@ func (ck *Clerk) Get(key string) string {
 // keeps trying until it succeeds.
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
-  args := &PutArgs{key, value, dohash, ck.id, time.Now()}
-  var reply PutReply
-  for reply.Err != OK {
-    call(ck.servers[ck.curServer], "KVPaxos.Put", args, &reply)
-    if reply.Err != OK {
-      ck.curServer = (ck.curServer + 1) % len(ck.servers)
-    }
-    time.Sleep(50)
-  }
+  args := &PutArgs{Key: key, 
+                   Value: value, 
+                   DoHash: dohash, 
+                   ClientID: ck.clerkID,
+                   RequestID: time.Now().UnixNano()}
 
-  if dohash {
-    return reply.PreviousValue
-  } else {
-    return ""
+  serverIndex := 0
+  for {
+    var reply PutReply
+    rpc := call(ck.servers[serverIndex], "KVPaxos.Put", args, &reply)
+    
+    if rpc {
+      return reply.PreviousValue  
+    } else {
+      serverIndex = (serverIndex + 1) % len(ck.servers)
+    }
   }
 }
 

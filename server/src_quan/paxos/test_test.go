@@ -287,67 +287,67 @@ func TestForget(t *testing.T) {
 }
 
 func TestManyForget(t *testing.T) {
-  // runtime.GOMAXPROCS(4)
+  runtime.GOMAXPROCS(4)
 
-  // const npaxos = 3
-  // var pxa []*Paxos = make([]*Paxos, npaxos)
-  // var pxh []string = make([]string, npaxos)
-  // defer cleanup(pxa)
+  const npaxos = 3
+  var pxa []*Paxos = make([]*Paxos, npaxos)
+  var pxh []string = make([]string, npaxos)
+  defer cleanup(pxa)
   
-  // for i := 0; i < npaxos; i++ {
-  //   pxh[i] = port("manygc", i)
-  // }
-  // for i := 0; i < npaxos; i++ {
-  //   pxa[i] = Make(pxh, i, nil)
-  //   pxa[i].unreliable = true
-  // }
+  for i := 0; i < npaxos; i++ {
+    pxh[i] = port("manygc", i)
+  }
+  for i := 0; i < npaxos; i++ {
+    pxa[i] = Make(pxh, i, nil)
+    pxa[i].unreliable = true
+  }
 
-  // fmt.Printf("Test: Lots of forgetting ...\n")
+  fmt.Printf("Test: Lots of forgetting ...\n")
 
-  // const maxseq = 20
-  // done := false
+  const maxseq = 20
+  done := false
 
-  // go func() {
-  //   na := rand.Perm(maxseq)
-  //   for i := 0; i < len(na); i++ {
-  //     seq := na[i]
-  //     j := (rand.Int() % npaxos)
-  //     v := rand.Int() 
-  //     pxa[j].Start(seq, v)
-  //     runtime.Gosched()
-  //   }
-  // }()
+  go func() {
+    na := rand.Perm(maxseq)
+    for i := 0; i < len(na); i++ {
+      seq := na[i]
+      j := (rand.Int() % npaxos)
+      v := rand.Int() 
+      pxa[j].Start(seq, v)
+      runtime.Gosched()
+    }
+  }()
 
-  // go func() {
-  //   for done == false {
-  //     seq := (rand.Int() % maxseq)
-  //     i := (rand.Int() % npaxos)
-  //     if seq >= pxa[i].Min() {
-  //       decided, _ := pxa[i].Status(seq)
-  //       if decided {
-  //         pxa[i].Done(seq)
-  //       }
-  //     }
-  //     runtime.Gosched()
-  //   }
-  // }()
+  go func() {
+    for done == false {
+      seq := (rand.Int() % maxseq)
+      i := (rand.Int() % npaxos)
+      if seq >= pxa[i].Min() {
+        decided, _ := pxa[i].Status(seq)
+        if decided {
+          pxa[i].Done(seq)
+        }
+      }
+      runtime.Gosched()
+    }
+  }()
 
-  // time.Sleep(5 * time.Second)
-  // done = true
-  // for i := 0; i < npaxos; i++ {
-  //   pxa[i].unreliable = false
-  // }
-  // time.Sleep(2 * time.Second)
+  time.Sleep(5 * time.Second)
+  done = true
+  for i := 0; i < npaxos; i++ {
+    pxa[i].unreliable = false
+  }
+  time.Sleep(2 * time.Second)
 
-  // for seq := 0; seq < maxseq; seq++ {
-  //   for i := 0; i < npaxos; i++ {
-  //     if seq >= pxa[i].Min() {
-  //       pxa[i].Status(seq)
-  //     }
-  //   }
-  // }
+  for seq := 0; seq < maxseq; seq++ {
+    for i := 0; i < npaxos; i++ {
+      if seq >= pxa[i].Min() {
+        pxa[i].Status(seq)
+      }
+    }
+  }
 
-  // fmt.Printf("  ... Passed\n")
+  fmt.Printf("  ... Passed\n")
 }
 
 //
@@ -376,7 +376,6 @@ func TestForgetMem(t *testing.T) {
   runtime.GC()
   var m0 runtime.MemStats
   runtime.ReadMemStats(&m0)
-
   // m0.Alloc about a megabyte
 
   for i := 1; i <= 10; i++ {
@@ -391,7 +390,6 @@ func TestForgetMem(t *testing.T) {
   runtime.GC()
   var m1 runtime.MemStats
   runtime.ReadMemStats(&m1)
-
   // m1.Alloc about 90 megabytes
 
   for i := 0; i < npaxos; i++ {

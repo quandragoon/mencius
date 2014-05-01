@@ -28,63 +28,66 @@ import "syscall"
 import "sync"
 import "fmt"
 import "math/rand"
-import "container/list"
 import "time"
+import "math"
 
+const (
+  OK = "OK"
+  Reject = "Reject"
+  OKNOVALUE = "OKNOVALUE"
+)
 
-type Instance struct{
-  highestAccepted int64
-  highestResponded int64
-  agreed bool
-  val interface{}
-}
-
-
-// RPC structs
-
-type PrepareArgs struct {
-  Instance int  
-  Proposal int64 
-  MaxDone int // max done seen
-  Me string 
-}
-
-type PrepareReply struct {
-  MaxProposalAccepted int64
-  NextProposalNumber int64
-  OK bool
-  Value interface{}
-}
+type Reply string
 
 type AcceptArgs struct {
-  Instance int
-  Proposal int64
+  Seq int
+  N int64
   Value interface{}
+  PeerID int
+  DoneSeq int
 }
 
 type AcceptReply struct {
-  Proposal int64
-  NextProposalNumber int64
-  OK bool
+  Reply Reply
+  Seq int
 }
 
 type DecidedArgs struct {
-  Instance int
-  Proposal int64
+  Seq int
   Value interface{}
+  PeerID int
+  DoneSeq int
 }
 
 type DecidedReply struct {
-  OK bool
-  NextProposalNumber int64
+  Reply Reply
+  PeerID int
+  DoneSeq int
 }
 
+type PrepareArgs struct {
+  Seq int
+  N int64
+  Value interface{}
+  PeerID int
+  DoneSeq int
+}
 
+type PrepareReply struct {
+  Reply Reply
+  Seq int
+  N_a int64
+  Value_a interface{}
+}
 
-
-
-
-
+type Agreement struct {
+  seq int
+  n_p int64
+  n_a int64
+  v_a interface{} //??
+  v_final interface{}
+  decided bool
+}
 
 type Paxos struct {
   mu sync.Mutex
@@ -97,10 +100,10 @@ type Paxos struct {
 
 
   // Your data here.
-  instances map[int]Instance
-  maxPeerDones map[string]int
-
-  // iLock sync.Mutex
+  agreements map[int]*Agreement
+  peersDone []int
+  curSeq int
+  highestDone int
 }
 
 //
@@ -139,275 +142,160 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
   return false
 }
 
-
-
-
-
-
-
-
-
-
-
-func (px *Paxos) ProposalGen() int64{
-  return (int64(time.Now().UnixNano()) * int64(len(px.peers))) + int64(px.me)
-}
-
-
-
-
-
-
-
-
-func MakeNewInstance() Instance{
-  return Instance{-1, -1, false, nil}
-}
-
-
-
-
-
-
-
-func Max(x int, y int) int {
-  if x > y{
-    return x
-  }
-  return y
-}
-
-
-
-
-func Min(x int, y int) int {
-  if x < y {
-    return x
-  }
-  return y
-}
-
-
-
-
-
-
-
-func (px *Paxos) GetPaxosInstance(seq int) Instance {
-
-  if instance, found := px.instances[seq]; found {
-    return instance
-  }
-  px.instances[seq] = MakeNewInstance()
-  instance := px.instances[seq]
-  return instance
-}
-
-
-
-
-func (px *Paxos) Propose(instance int, value interface{}) {
-//   choose n, unique and higher than any n seen so far
-//   send prepare(n) to all servers including self
-
-
-  majority := (len(px.peers) / 2) + 1
-  Done := false
-  maxProposalValue := value
-
-
-
-  for !Done {
-    if px.dead{
-      break
-    }
-    proposal := px.ProposalGen()
-    
-    P_replies := list.New()
-
-    for _, peer := range px.peers {
-      prepareArgs := &PrepareArgs{instance, proposal, px.maxPeerDones[px.peers[px.me]], px.peers[px.me]}
-      var reply PrepareReply = PrepareReply{}
-      if peer != px.peers[px.me]{
-        ok := call(peer, "Paxos.Prepare", prepareArgs, &reply)
-        if ok {
-          P_replies.PushBack(reply)
+func (px *Paxos) Proposer(seq int, value interface{}) error {
+  //fmt.Printf("Proposing for sequence number %d and Paxos %d\n", seq, px.me)
+  px.mu.Lock()
+  decided := px.agreements[seq] == nil || px.agreements[seq].decided
+  px.mu.Unlock()
+  for !decided && px.dead == false {
+    t := time.Now().UnixNano()
+    n := t * int64(len(px.peers)) + int64(px.me)
+    //fmt.Printf("Paxos %d seq %d has proposal number %d\n", px.me, seq, n)
+    replied := 0
+    v := value
+    n_highest := int64(0)
+    for i := 0; i < len(px.peers); i++ {
+      //fmt.Printf("Sending prepare for peer %d: %s\n", i, px.peers[i])
+      prepareArgs := &PrepareArgs{seq, n, value, px.me, px.highestDone}
+      var prepareReply PrepareReply
+      if i != px.me {
+        call(px.peers[i], "Paxos.Prepare", prepareArgs, &prepareReply)
+      } else {
+        px.Prepare(prepareArgs, &prepareReply)
+      }
+      if prepareReply.Reply == OK {
+        //fmt.Printf("A reply for #%d!\n", i)
+        replied++
+        if prepareReply.N_a > n_highest {
+          //fmt.Printf("Previous accepted value for Paxos %d Seq %d: %s\n", px.me, seq, prepareReply.Value_a)
+          n_highest = prepareReply.N_a
+          v = prepareReply.Value_a
         }
-      } else { // if self, still send prepare, but no need for RPC
-        px.Prepare(prepareArgs, &reply)
-        P_replies.PushBack(reply)
+      } else if prepareReply.Reply == OKNOVALUE {
+        replied++
       }
     }
 
+    //fmt.Printf("Number replied: %d, total: %d\n", replied, len(px.peers))
 
-    NumPrepareReply := 0
-    maxProposal := int64(-1)
-
-    // go through all replies to count majority 
-    for p_re := P_replies.Front(); p_re != nil; p_re = p_re.Next(){
-      reply := p_re.Value.(PrepareReply)
-      if reply.OK {
-        NumPrepareReply++
-        if reply.MaxProposalAccepted > maxProposal{
-          maxProposal = reply.MaxProposalAccepted
-          maxProposalValue = reply.Value
+    if replied > len(px.peers) / 2 {
+      //fmt.Printf("We have a propose majority: Paxos %d Seq %d Value %s!\n", px.me, seq, v)
+      replied = 0
+      for i := 0; i < len(px.peers); i++ {
+        acceptArgs := &AcceptArgs{seq, n, v, px.me, px.highestDone}
+        var acceptReply AcceptReply
+        if i != px.me {
+          call(px.peers[i], "Paxos.Accept", acceptArgs, &acceptReply)
+        } else {
+          px.Accept(acceptArgs, &acceptReply)
         }
-      } 
-    }
-    
-
-    A_replies := list.New()
-    
-    // if prepare_ok(n_a, v_a) from majority:
-    if (NumPrepareReply >= majority) {
-      // v' = v_a with highest n_a; choose own v otherwise
-      // send accept(n, v') to all
-      for _, p := range px.peers {
-        acceptArgs := &AcceptArgs{instance, proposal, maxProposalValue}
-        var reply AcceptReply = AcceptReply{}
-        if p != px.peers[px.me] {
-          ok := call(p, "Paxos.Accept", acceptArgs, &reply)
-          if ok {
-            A_replies.PushBack(reply)
-          }
-        } else { // if self, still send accept, but not using RPC
-          px.Accept(acceptArgs, &reply)
-          A_replies.PushBack(reply)
+        if acceptReply.Reply == OK {
+          replied++
         }
       }
 
-
-      NumAccepted := 0
-      for a_re := A_replies.Front(); a_re != nil; a_re = a_re.Next() {
-        reply := a_re.Value.(AcceptReply)
-        if reply.OK {
-          NumAccepted++
-        } 
-      }
-      // if accept_ok(n) from majority:
-      // send decided(v') to all
-      if NumAccepted >= majority {
-        decidedArgs := &DecidedArgs{instance, proposal, maxProposalValue}
-        var reply DecidedReply = DecidedReply{}
-        for _, p := range px.peers {
-          if p != px.peers[px.me]{
-            call(p, "Paxos.Decided", decidedArgs, &reply)
+      if replied > len(px.peers) / 2 {
+        //fmt.Printf("We have an accept majority: Paxos %d Seq %d Value %s!\n", px.me, seq, v)
+        decideArgs := &DecidedArgs{seq, v, px.me, px.highestDone}
+        for i := 0; i < len(px.peers); i++ {
+          var decideReply DecidedReply
+          if i != px.me {
+            call(px.peers[i], "Paxos.Decide", decideArgs, &decideReply)
           } else {
-            px.Decided(decidedArgs, &reply) // if self
+            px.Decide(decideArgs, &decideReply)
+          }
+          if px.peersDone[decideReply.PeerID] < decideReply.DoneSeq {
+            px.peersDone[decideReply.PeerID] = decideReply.DoneSeq
           }
         }
-        Done = true
-      }
-    } 
-    // clean up this shit
-    px.ForgetMin()
+      } //else {
+        //fmt.Printf("Accept was rejected for Paxos %d Seq %d Value %s, sleeping..\n", px.me, seq, value)
+      //}
+    } else {
+      //fmt.Printf("Proposal was rejected for Paxos %d Seq %d Value %s, sleeping..\n", px.me, seq, value)
+      time.Sleep(500 * time.Millisecond)
+    }
+    px.mu.Lock()
+    decided = px.agreements[seq] == nil || px.agreements[seq].decided
+    px.mu.Unlock()
   }
+
+  px.Done(px.highestDone)
+  return nil
 }
 
-
-
-
-
-
-
-
-
-// acceptor's prepare(n) handler:
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
-  
   px.mu.Lock()
-  defer px.mu.Unlock()
-  
-  // update table of what each peer sees
-  px.maxPeerDones[args.Me] = Max(px.maxPeerDones[args.Me], args.MaxDone)
+  //px.peersDone[args.PeerID] = args.DoneSeq
 
-  ok := false
-
-  i := px.GetPaxosInstance(args.Instance)
-  
-  // if n > n_p
-  if args.Proposal > i.highestResponded{
-    // n_p = n
-    i.highestResponded = args.Proposal
-    px.instances[args.Instance] = i
-    reply.MaxProposalAccepted = i.highestAccepted
-    reply.Value = i.val
-    // reply prepare_ok(n_a, v_a)
-    // else
-    //    reply prepare_reject
-    ok = true
-  } else {
-    reply.NextProposalNumber = i.highestResponded
+  if _, ok := px.agreements[args.Seq]; !ok || px.agreements[args.Seq] == nil {
+    //fmt.Printf("No agreement yet, making one..\n")
+    px.agreements[args.Seq] = &Agreement{seq: args.Seq}
   }
-  
-  reply.OK = ok
 
+  if args.N > px.agreements[args.Seq].n_p {
+    //fmt.Printf("%d: Proposal %d from %d for seq %d value %s is bigger than %d\n", px.me, args.N, args.PeerID, args.Seq, args.Value, px.agreements[args.Seq].n_p)
+    px.agreements[args.Seq].n_p = args.N
+    reply.Reply = OK
+
+    if px.agreements[args.Seq].n_a == 0 {
+      reply.Value_a = nil
+      reply.N_a = 0
+      reply.Reply = OKNOVALUE
+    } else {
+      //fmt.Printf("%d has already agreed on %s\n", px.me, px.agreements[args.Seq].v_a)
+      reply.Value_a = px.agreements[args.Seq].v_a
+      reply.N_a = px.agreements[args.Seq].n_a
+    }
+    
+    
+  } else {
+    reply.Reply = Reject
+  }
+  px.mu.Unlock()
   return nil
 }
 
-
-
-
-
-
-
-// acceptor's accept(n, v) handler:
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
-
   px.mu.Lock()
-  defer px.mu.Unlock()
+  //px.peersDone[args.PeerID] = args.DoneSeq
 
-
-  ok := false
-  i := px.GetPaxosInstance(args.Instance)
-  // if n >= n_p
-  if args.Proposal >= i.highestResponded {
-    // n_p = n
-    i.highestResponded = args.Proposal
-    // n_a = n
-    i.highestAccepted = args.Proposal
-    // v_a = v
-    i.val = args.Value
-
-    px.instances[args.Instance] = i
-
-    reply.Proposal = args.Proposal
-    // reply accept_ok(n)
-    //   else
-    //   reply accept_reject
-    ok = true
-  } else {
-    reply.NextProposalNumber = i.highestResponded
+  if px.agreements[args.Seq] != nil {
+    if args.N >= px.agreements[args.Seq].n_p {
+      //fmt.Printf("Accept for Paxos %d seq %d value %s\n", px.me, args.Seq, args.Value)
+      px.agreements[args.Seq].n_p = args.N
+      px.agreements[args.Seq].n_a = args.N
+      px.agreements[args.Seq].v_a = args.Value
+      reply.Reply = OK
+    } else {
+      //fmt.Printf("Accept rejected for Paxos %d seq %d value %s\n", px.me, args.Seq, args.Value)
+      reply.Reply = Reject
+    }
   }
-
-  reply.OK = ok
-
+  px.mu.Unlock()
   return nil
 }
 
-
-
-
-
-
-func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error {
- 
+func (px *Paxos) Decide(args *DecidedArgs, reply *DecidedReply) error {
   px.mu.Lock()
-  defer px.mu.Unlock()
-
-  i := px.GetPaxosInstance(args.Instance)
-  i.val = args.Value
-  i.agreed = true
-  px.instances[args.Instance] = i
-
-  reply.OK = true
-
+  if px.agreements[args.Seq] != nil && !px.agreements[args.Seq].decided{
+    //fmt.Printf("%d decided on value %s for sequence number %d\n", px.me, args.Value, args.Seq)
+    //fmt.Printf("%d piggybacked done seq number %d from %d\n", px.me, args.DoneSeq, args.PeerID)
+    px.agreements[args.Seq].v_final = args.Value
+    px.agreements[args.Seq].decided = true
+    reply.Reply = OK
+    if px.peersDone[args.PeerID] < args.DoneSeq {
+      px.peersDone[args.PeerID] = args.DoneSeq
+    }
+    reply.PeerID = px.me
+    reply.DoneSeq = px.highestDone
+    if args.Seq > px.curSeq {
+      px.curSeq = args.Seq
+    }
+  }
+  px.mu.Unlock()
   return nil
 }
-
-
-
-
 
 //
 // the application wants paxos to start agreement on
@@ -417,29 +305,28 @@ func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-  // Your code here.
-  
-  px.mu.Lock()
-  defer px.mu.Unlock()
-  
-  if px.Min() <= seq{
-    agreed, _ := px.Status(seq)
-    if agreed{
-      return
-    }
+  //fmt.Printf("Sequence number: %d, Current min: %d\n", seq, px.Min())
+  if seq >= px.Min() {
+    _, ok := px.agreements[seq]
+    if !ok || px.agreements[seq] == nil{
+      if seq > px.curSeq {
+        px.curSeq = seq
+      }
 
-    go px.Propose(seq, v)
+      px.mu.Lock()
+      px.agreements[seq] = &Agreement{seq: seq}
+      px.mu.Unlock()
+      if px.dead == false {
+        go px.Proposer(seq, v)
+      }
+    } else {
+      if !px.agreements[seq].decided && px.dead == false{
+        go px.Proposer(seq, v)
+      }
+    }
   }
   return
 }
-
-
-
-
-
-
-
-
 
 //
 // the application on this machine is done with
@@ -448,22 +335,22 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-  // Your code here.
+  //fmt.Printf("Server %d Done with %d, Highest done so far: %d\n", px.me, seq, px.highestDone)
+  if seq > px.highestDone {
+    px.highestDone = seq
+  }
 
   px.mu.Lock()
-  defer px.mu.Unlock()
-
-  me := px.peers[px.me]
-  px.maxPeerDones[me] = int(Max(seq, px.maxPeerDones[me]))
-  px.ForgetMin()
-
-  return
+  min := px.Min()
+  //fmt.Printf("Minimum seq number %d is done with: %d\n", px.me, min)
+  for seq, _ := range px.agreements {
+    if seq < min {
+      // fmt.Printf("Server %d freeing %d\n", px.me, seq)
+      px.agreements[seq] = nil
+    }
+  }
+  px.mu.Unlock()
 }
-
-
-
-
-
 
 //
 // the application wants to know the
@@ -471,26 +358,8 @@ func (px *Paxos) Done(seq int) {
 // this peer.
 //
 func (px *Paxos) Max() int {
-  // Your code here.
-
-  // px.iLock.Lock()
-  // defer px.iLock.Unlock()
-
-  max := -1
-  for i := range(px.instances){
-    max = Max(max, i)
-  }
-  return max
+  return px.curSeq
 }
-
-
-
-
-
-
-
-
-
 
 //
 // Min() should return one more than the minimum among z_i,
@@ -521,38 +390,14 @@ func (px *Paxos) Max() int {
 // instances.
 // 
 func (px *Paxos) Min() int {
-  // You code here.
-
-  min := px.maxPeerDones[px.peers[px.me]] // can set this to MAXINT
-  for _, m := range(px.maxPeerDones){
-    min = Min(min, m)
+  min := math.MaxInt64
+  for i := 0; i < len(px.peersDone); i++ {
+    if px.peersDone[i] < min {
+      min = px.peersDone[i]
+    }
   }
   return min + 1
 }
-
-
-
-
-
-
-func (px *Paxos) ForgetMin() {
-
-  min := px.Min()
-
-  for i := range(px.instances) {
-    if i < min {
-      delete(px.instances, i)
-    }
-  }
-
-  return
-}
-
-
-
-
-
-
 
 //
 // the application wants to know whether this
@@ -562,17 +407,13 @@ func (px *Paxos) ForgetMin() {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-  // Your code here.
-
-  // don't grab lock because this is called by other 
-  // functions who already have the lock
-
-
-  i, ok := px.instances[seq]
-  if ok {
-    return i.agreed, i.val
+  if seq >= px.Min() {
+    if agreement, ok := px.agreements[seq]; ok && agreement != nil{
+      if px.agreements[seq].decided {
+        return true, px.agreements[seq].v_final
+      }
+    }
   }
-
   return false, nil
 }
 
@@ -589,9 +430,6 @@ func (px *Paxos) Kill() {
   }
 }
 
-
-
-
 //
 // the application wants to create a paxos peer.
 // the ports of all the paxos peers (including this one)
@@ -604,13 +442,13 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 
 
   // Your initialization code here.
-  px.instances = map[int]Instance{}
-  px.maxPeerDones = map[string]int{}
-  for _, p := range (px.peers){
-    px.maxPeerDones[p] = -1
+  px.agreements = make(map[int]*Agreement)
+  px.curSeq = -1
+  px.highestDone = -1
+  px.peersDone = make([]int, len(px.peers))
+  for i := 0; i < len(px.peersDone); i++ {
+    px.peersDone[i] = -1
   }
-
-
 
   if rpcs != nil {
     // caller will create socket &c

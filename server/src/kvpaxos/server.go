@@ -10,8 +10,9 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
-import "strconv"
 import "time"
+
+import "strconv"
 
 const Debug=0
 
@@ -22,27 +23,24 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
   return
 }
 
-const (
-  PutOp = "PUT"
-  GetOp = "GET"
-  NoOp = "NOOP"
-)
-
-// const (
-//   GameMoveOp = "MOVE"
-//   NoOp = "NOOP"
-// )
 
 type Op struct {
   // Your definitions here.
   // Field names must start with capital letters,
   // otherwise RPC will break.
-  Type string
   Key string
   Value string
-  IsPutHash bool
+  Type string
+  DoHash bool
   ClientID int64
-  RequestID int64
+  RequestTime time.Time
+}
+
+type RequestValue struct {
+  Value string
+  ClientID int64
+  RequestTime time.Time
+  SeqNum int
 }
 
 type KVPaxos struct {
@@ -53,147 +51,224 @@ type KVPaxos struct {
   unreliable bool // for testing
   px *paxos.Paxos
 
-  kvStore map[string]string
-  lastExecutedSeqId int
-  clientExecutedRequestIds map[int64]int64
-  clientPreviousResponses map[int64]string
+  // Your definitions here.
+  keyvalues map[string]RequestValue
+  putRequests map[int64]DuplicatePut
+  getRequests map[int64]DuplicateGet
 }
 
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
   kv.mu.Lock()
-  defer kv.mu.Unlock()
+  duplicate, ok := kv.getRequests[args.ClientID]
+  if (ok && duplicate.RequestTime.Before(args.RequestTime)) || !ok {
+    getOp := Op{args.Key, "", GET, false, args.ClientID, args.RequestTime}
+    var seqNum int
 
-  getOp := Op{Type: GetOp,
-             Key: args.Key,
-             Value: "",
-             IsPutHash: false,
-             ClientID: args.ClientID,
-             RequestID: args.RequestID}
+    seqNum = kv.px.Max() + 1
+    kv.px.Start(seqNum, getOp)
 
-  kv.commitOp(getOp)
+    // Wait for agreement
+    to := time.Millisecond
+    for {
+      decided, val := kv.px.Status(seqNum)
+      if decided {
+        if val.(Op) == getOp {
+          // Check if agreed on instance is this instance
+          break
+        } else {
+          // No agreement, have client try again
+          reply.Err = ErrNoAgreement
+          kv.mu.Unlock()
+          return nil
+        }
+      }
+      time.Sleep(to)
+      if to < 10 * time.Second {
+        to *= 2
+      }
+    }
 
-  value := kv.executeGetOp(getOp)
+    // Update first/do catchup
+    curSeq := kv.px.Min()
+    for curSeq < seqNum {
+      decided, val := kv.px.Status(curSeq)
+      if decided {
+        if val.(Op).Type == PUT { // Only care about PUT ops
+          dbVal, dbOk := kv.keyvalues[val.(Op).Key]
 
-  kv.lastExecutedSeqId += 1
-  kv.px.Done(kv.lastExecutedSeqId)
+          newval := ""
+          previousVal := ""
+          // Calculate hash as we go
+          if val.(Op).DoHash {
+            curVal, ok := kv.keyvalues[val.(Op).Key]
+            if !ok {
+              curVal = RequestValue{"", 0, time.Now(), 0}
+            }
+            previousVal = curVal.Value
+            newval = strconv.Itoa(int(hash(curVal.Value + val.(Op).Value)))
+          } else {
+            newval = val.(Op).Value
+          }
 
-  if value == "" {
-    reply.Err = ErrNoKey
+          if !dbOk {
+            kv.keyvalues[val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq}
+            kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
+          } else if dbVal.SeqNum < curSeq {
+            if dbVal.RequestTime != val.(Op).RequestTime { // At most once guarantee
+              kv.keyvalues[val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq}
+              kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
+            }
+          }
+        }
+        curSeq++
+      } else {
+        // Not decided yet or missed out or done, send in a NOP to check
+        if curSeq >= kv.px.Min() {
+          noOp := Op{"", "", GET, false, 0, time.Now()}
+          kv.px.Start(curSeq, noOp)
+          to := time.Millisecond
+          for {
+            decided, _ := kv.px.Status(curSeq)
+            if decided {
+              break
+            }
+            time.Sleep(to)
+            if to < 10 * time.Second {
+              to *= 2
+            }
+          }
+        } else {
+          curSeq++
+        }
+      }
+    }
+    // End of updates
+
+    val, ok := kv.keyvalues[args.Key]
+    if ok {
+      // Value exists, return it
+      reply.Err = OK
+      reply.Value = val.Value
+      kv.getRequests[args.ClientID] = DuplicateGet{args.RequestTime, reply.Value}
+    } else {
+      // Key doesn't exist
+      reply.Err = ErrNoKey
+    }
+    kv.px.Done(seqNum)
   } else {
     reply.Err = OK
+    reply.Value = duplicate.Value
   }
-
-  reply.Value = value
-
+  kv.mu.Unlock()
   return nil
 }
 
 func (kv *KVPaxos) Put(args *PutArgs, reply *PutReply) error {
   kv.mu.Lock()
-  defer kv.mu.Unlock()
+  duplicate, ok := kv.putRequests[args.ClientID]
+  if (ok && duplicate.RequestTime.Before(args.RequestTime)) || !ok {
+    var newval string
+    putOp := Op{args.Key, args.Value, PUT, args.DoHash, args.ClientID, args.RequestTime}
+    seqNum := kv.px.Max() + 1
+    kv.px.Start(seqNum, putOp)
 
-  putOp := Op{Type: PutOp, 
-              Key: args.Key, 
-              Value: args.Value, 
-              IsPutHash: args.DoHash,
-              ClientID: args.ClientID,
-              RequestID: args.RequestID}
+    // Wait for agreement
+    to := 10 * time.Millisecond
+    for {
+      decided, val := kv.px.Status(seqNum)
+      if decided {
+        // Updates first
+        curSeq := kv.px.Min()
+        for curSeq < seqNum {
+          decided, val := kv.px.Status(curSeq)
+          if decided {
+            if val.(Op).Type == PUT {
+              dbVal, dbOk := kv.keyvalues[val.(Op).Key]
+              previousVal := ""
+              if val.(Op).DoHash {
+                curVal, ok := kv.keyvalues[val.(Op).Key]
+                if !ok {
+                  curVal = RequestValue{"", 0, time.Now(), 0}
+                }
+                previousVal = curVal.Value
+                newval = strconv.Itoa(int(hash(curVal.Value + val.(Op).Value)))
+              } else {
+                newval = val.(Op).Value
+              }
 
-  kv.commitOp(putOp)
+              if !dbOk {
+                // Encountered new key
+                kv.keyvalues[val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq}
+                kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
+              } else if dbVal.SeqNum < curSeq && dbVal.RequestTime != val.(Op).RequestTime {
+                // Old key, but by a client request we haven't seen yet
+                kv.keyvalues[val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq}
+                kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
+              }
+            }
+            curSeq++
+          } else {
+            // Not decided yet or missed out or done, send in a NOP to check
+            noOp := Op{"", "", GET, false, 0, time.Now()}
+            kv.px.Start(curSeq, noOp)
+            to := time.Millisecond
+            for {
+              decided, _ := kv.px.Status(curSeq)
+              if decided {
+                break
+              }
+              time.Sleep(to)
+              if to < 10 * time.Second {
+                to *= 2
+              }
+            }
+          }
+        }
 
-  previousValue := kv.executePutOp(putOp)
+        if val.(Op) == putOp {
+          // Calculate hash again to be safe
+          if args.DoHash {
+            val, ok := kv.keyvalues[args.Key]
+            if !ok {
+              val = RequestValue{"", 0, time.Now(), 0}
+            }
+            reply.PreviousValue = val.Value
+            newval = strconv.Itoa(int(hash(val.Value + args.Value)))
+          } else {
+            newval = args.Value
+          }
 
-  kv.lastExecutedSeqId += 1
-  kv.px.Done(kv.lastExecutedSeqId)
+          reply.Err = OK
+          dbVal, dbOk := kv.keyvalues[args.Key]
+          if !dbOk || (dbVal.SeqNum < seqNum && dbVal.RequestTime != args.RequestTime) {
+            // Make sure at once
+            kv.keyvalues[args.Key] = RequestValue{newval, args.ClientID, args.RequestTime, seqNum}
+            kv.putRequests[args.ClientID] = DuplicatePut{args.RequestTime, reply.PreviousValue}
+          } else {
+            // Otherwise send back the previous previous-value
+            reply.PreviousValue = kv.putRequests[args.ClientID].PreviousValue
+          }
 
-  reply.Err = OK
-  reply.PreviousValue = previousValue
-
-  return nil
-}
-
-// tries to commit an op in the log.
-// when it fails on an instance, it will execute whatever value is in there,
-// and then move on.
-// when it finally commits the operation, it doesn't execute it. it returns
-// and lets its caller execute it.
-func (kv *KVPaxos) commitOp(operation Op) {
-  committed := false
-
-  for !committed {
-    currSeqId := kv.lastExecutedSeqId + 1
-    decided, thisOp := kv.px.Status(currSeqId)
-
-    if decided {
-      kv.executeOp(thisOp.(Op))
-      kv.px.Done(currSeqId)
-      kv.lastExecutedSeqId = currSeqId
-    } else {
-      kv.px.Start(currSeqId, operation) 
-      decidedOp := kv.waitForPaxos(currSeqId)
-
-      if decidedOp.ClientID == operation.ClientID && 
-         decidedOp.RequestID == operation.RequestID {
-        committed = true
+          kv.px.Done(seqNum)
+          kv.mu.Unlock()
+          return nil
+        } else {
+          reply.Err = ErrNoAgreement
+          break
+        }
+      }
+      time.Sleep(to)
+      if to < 10 * time.Second {
+        to *= 2
       }
     }
-  }
-  return
-}
-
-func (kv *KVPaxos) executeOp(operation Op) {
-  if kv.clientExecutedRequestIds[operation.ClientID] >= operation.RequestID {
-    return
   } else {
-    switch operation.Type {
-    case PutOp:
-      kv.executePutOp(operation)
-      return
-    case GetOp:
-      return 
-    case NoOp:
-      return
-    }
-    return   
+    reply.Err = OK
+    reply.PreviousValue = duplicate.PreviousValue
   }
-}
-
-func (kv *KVPaxos) executePutOp(putOp Op) string {
-  if kv.clientExecutedRequestIds[putOp.ClientID] >= putOp.RequestID {
-    return kv.clientPreviousResponses[putOp.ClientID]
-  }
-  previousValue := kv.kvStore[putOp.Key]
-  newValue := putOp.Value
-
-  if putOp.IsPutHash {
-    newString := previousValue + newValue
-    newValue = strconv.Itoa(int(hash(newString)))
-  }
-
-  kv.kvStore[putOp.Key] = newValue
-  kv.clientExecutedRequestIds[putOp.ClientID] = putOp.RequestID
-  kv.clientPreviousResponses[putOp.ClientID] = previousValue
-
-  return previousValue
-}
-
-func (kv *KVPaxos) executeGetOp(getOp Op) string {
-  return kv.kvStore[getOp.Key]
-}
-
-func (kv *KVPaxos) waitForPaxos(seqId int) Op {
-  to := 10 * time.Millisecond
-  for {
-    decided, operation := kv.px.Status(seqId)
-    if decided {
-      return operation.(Op)
-    }
-    time.Sleep(to)
-    if to < 10 * time.Second {
-      to *= 2
-    }
-  }
+  kv.mu.Unlock()
+  return nil
 }
 
 // tell the server to shut itself down.
@@ -218,10 +293,11 @@ func StartServer(servers []string, me int) *KVPaxos {
 
   kv := new(KVPaxos)
   kv.me = me
-  kv.kvStore = make(map[string]string)
-  kv.lastExecutedSeqId = -1
-  kv.clientExecutedRequestIds = make(map[int64]int64)
-  kv.clientPreviousResponses = make(map[int64]string)
+
+  // Your initialization code here.
+  kv.keyvalues = make(map[string]RequestValue)
+  kv.putRequests = make(map[int64]DuplicatePut)
+  kv.getRequests = make(map[int64]DuplicateGet)
 
   rpcs := rpc.NewServer()
   rpcs.Register(kv)

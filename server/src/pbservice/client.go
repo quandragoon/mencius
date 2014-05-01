@@ -1,27 +1,30 @@
-package kvpaxos
+package pbservice
 
+import "viewservice"
 import "net/rpc"
 import "fmt"
+
+// You'll probably need to uncomment these:
 import "time"
 import "crypto/rand"
 import "math/big"
 
+
+
 type Clerk struct {
-  servers []string
-  // You will have to modify this struct.
+  vs *viewservice.Clerk
+  // Your declarations here
 
   id int64
-  curServer int
 }
 
 
-func MakeClerk(servers []string) *Clerk {
+func MakeClerk(vshost string, me string) *Clerk {
   ck := new(Clerk)
-  ck.servers = servers
-  // You'll have to add code here.
+  ck.vs = viewservice.MakeClerk(me, vshost)
+  // Your ck.* initializations here
 
   ck.id = nrand()
-  ck.curServer = 0
   return ck
 }
 
@@ -66,19 +69,19 @@ func call(srv string, rpcname string,
 }
 
 //
-// fetch the current value for a key.
-// returns "" if the key does not exist.
-// keeps trying forever in the face of all other errors.
+// fetch a key's value from the current primary;
+// if they key has never been set, return "".
+// Get() must keep trying until it either the
+// primary replies with the value or the primary
+// says the key doesn't exist (has never been Put().
 //
 func (ck *Clerk) Get(key string) string {
+  // Add id later
   args := &GetArgs{key, ck.id, time.Now()}
   var reply GetReply
-  for reply.Err != OK && reply.Err != ErrNoKey {
-    call(ck.servers[ck.curServer], "KVPaxos.Get", args, &reply)
-    if reply.Err != OK {
-      ck.curServer = (ck.curServer + 1) % len(ck.servers)
-    }
-    time.Sleep(50)
+  for reply.Err != OK && reply.Err != ErrNoKey && reply.Err != ErrWrongServer { // TODO: or if error?
+    call(ck.vs.Primary(), "PBServer.Get", args, &reply)
+    time.Sleep(viewservice.PingInterval)
   }
 
   if reply.Err == OK {
@@ -89,24 +92,20 @@ func (ck *Clerk) Get(key string) string {
 }
 
 //
-// set the value for a key.
-// keeps trying until it succeeds.
+// tell the primary to update key's value.
+// must keep trying until it succeeds.
 //
 func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
   args := &PutArgs{key, value, dohash, ck.id, time.Now()}
   var reply PutReply
   for reply.Err != OK {
-    call(ck.servers[ck.curServer], "KVPaxos.Put", args, &reply)
-    if reply.Err != OK {
-      ck.curServer = (ck.curServer + 1) % len(ck.servers)
-    }
-    time.Sleep(50)
+    call(ck.vs.Primary(), "PBServer.Put", args, &reply)
+    time.Sleep(viewservice.PingInterval)
   }
-
   if dohash {
     return reply.PreviousValue
   } else {
-    return ""
+    return "" // Check?
   }
 }
 

@@ -1,4 +1,4 @@
-package kvpaxos
+package pbservice
 
 import "hash/fnv"
 import "time"
@@ -6,27 +6,27 @@ import "time"
 const (
   OK = "OK"
   ErrNoKey = "ErrNoKey"
-  ErrNoAgreement = "ErrNoAgreement"
-  PUT = "PUT"
-  GET = "GET"
+  ErrWrongServer = "ErrWrongServer"
+  ErrDuplicate = "ErrDuplicate"
 )
 type Err string
 
 type PutArgs struct {
-  // You'll have to add definitions here.
   Key string
   Value string
-  DoHash bool  // For PutHash
+  DoHash bool // For PutHash
   // You'll have to add definitions here.
-  // Field names must start with capital letters,
-  // otherwise RPC will break.
+
   ClientID int64
   RequestTime time.Time
+
+  // Field names must start with capital letters,
+  // otherwise RPC will break.
 }
 
 type PutReply struct {
   Err Err
-  PreviousValue string   // For PutHash
+  PreviousValue string // For PutHash
 }
 
 type GetArgs struct {
@@ -42,6 +42,7 @@ type GetReply struct {
   Value string
 }
 
+// Your RPC definitions here.
 type DuplicatePut struct {
   RequestTime time.Time
   PreviousValue string
@@ -52,8 +53,30 @@ type DuplicateGet struct {
   Value string
 }
 
+type UpdateArgs struct {
+  Key string
+  Value string
+  Primary string
+  ClientID int64
+  Request DuplicatePut
+}
+
+type UpdateReply struct {
+  Err Err
+}
+
+type ForwardArgs struct {
+  KeyValues map[string]string
+  Requests map[int64]DuplicatePut
+}
+
+type ForwardReply struct {
+  Err Err
+}
+
 func hash(s string) uint32 {
   h := fnv.New32a()
   h.Write([]byte(s))
   return h.Sum32()
 }
+
