@@ -142,60 +142,61 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
   return false
 }
 
+// Loops through the peers are sends Prepare statements, waiting for reply
+func (px *Paxos) ProposePrepare(seq int, value interface{}) (int, int64, interface{}) {
+  t := time.Now().UnixNano()
+  n := t * int64(len(px.peers)) + int64(px.me)
+  replied := 0
+  v := value
+  n_highest := int64(0)
+  for i := 0; i < len(px.peers); i++ {
+    prepareArgs := &PrepareArgs{seq, n, value, px.me, px.highestDone}
+    var prepareReply PrepareReply
+    if i != px.me {
+      call(px.peers[i], "Paxos.Prepare", prepareArgs, &prepareReply)
+    } else {
+      px.Prepare(prepareArgs, &prepareReply)
+    }
+    if prepareReply.Reply == OK {
+      replied++
+      if prepareReply.N_a > n_highest {
+        n_highest = prepareReply.N_a
+        v = prepareReply.Value_a
+      }
+    } else if prepareReply.Reply == OKNOVALUE {
+      replied++
+    }
+  }
+  return replied, n, v
+}
+
+func (px *Paxos) ProposeAccept(seq int, n int64, value interface{}) int {
+  replied := 0
+  for i := 0; i < len(px.peers); i++ {
+    acceptArgs := &AcceptArgs{seq, n, value, px.me, px.highestDone}
+    var acceptReply AcceptReply
+    if i != px.me {
+      call(px.peers[i], "Paxos.Accept", acceptArgs, &acceptReply)
+    } else {
+      px.Accept(acceptArgs, &acceptReply)
+    }
+    if acceptReply.Reply == OK {
+      replied++
+    }
+  }
+  return replied
+}
+
 func (px *Paxos) Proposer(seq int, value interface{}) error {
-  //fmt.Printf("Proposing for sequence number %d and Paxos %d\n", seq, px.me)
   px.mu.Lock()
   decided := px.agreements[seq] == nil || px.agreements[seq].decided
   px.mu.Unlock()
   for !decided && px.dead == false {
-    t := time.Now().UnixNano()
-    n := t * int64(len(px.peers)) + int64(px.me)
-    //fmt.Printf("Paxos %d seq %d has proposal number %d\n", px.me, seq, n)
-    replied := 0
-    v := value
-    n_highest := int64(0)
-    for i := 0; i < len(px.peers); i++ {
-      //fmt.Printf("Sending prepare for peer %d: %s\n", i, px.peers[i])
-      prepareArgs := &PrepareArgs{seq, n, value, px.me, px.highestDone}
-      var prepareReply PrepareReply
-      if i != px.me {
-        call(px.peers[i], "Paxos.Prepare", prepareArgs, &prepareReply)
-      } else {
-        px.Prepare(prepareArgs, &prepareReply)
-      }
-      if prepareReply.Reply == OK {
-        //fmt.Printf("A reply for #%d!\n", i)
-        replied++
-        if prepareReply.N_a > n_highest {
-          //fmt.Printf("Previous accepted value for Paxos %d Seq %d: %s\n", px.me, seq, prepareReply.Value_a)
-          n_highest = prepareReply.N_a
-          v = prepareReply.Value_a
-        }
-      } else if prepareReply.Reply == OKNOVALUE {
-        replied++
-      }
-    }
-
-    //fmt.Printf("Number replied: %d, total: %d\n", replied, len(px.peers))
-
+    replied, n, v := px.ProposePrepare(seq, value)
     if replied > len(px.peers) / 2 {
-      //fmt.Printf("We have a propose majority: Paxos %d Seq %d Value %s!\n", px.me, seq, v)
-      replied = 0
-      for i := 0; i < len(px.peers); i++ {
-        acceptArgs := &AcceptArgs{seq, n, v, px.me, px.highestDone}
-        var acceptReply AcceptReply
-        if i != px.me {
-          call(px.peers[i], "Paxos.Accept", acceptArgs, &acceptReply)
-        } else {
-          px.Accept(acceptArgs, &acceptReply)
-        }
-        if acceptReply.Reply == OK {
-          replied++
-        }
-      }
+      replied = px.ProposeAccept(seq, n, v)
 
       if replied > len(px.peers) / 2 {
-        //fmt.Printf("We have an accept majority: Paxos %d Seq %d Value %s!\n", px.me, seq, v)
         decideArgs := &DecidedArgs{seq, v, px.me, px.highestDone}
         for i := 0; i < len(px.peers); i++ {
           var decideReply DecidedReply
@@ -208,11 +209,8 @@ func (px *Paxos) Proposer(seq int, value interface{}) error {
             px.peersDone[decideReply.PeerID] = decideReply.DoneSeq
           }
         }
-      } //else {
-        //fmt.Printf("Accept was rejected for Paxos %d Seq %d Value %s, sleeping..\n", px.me, seq, value)
-      //}
+      }
     } else {
-      //fmt.Printf("Proposal was rejected for Paxos %d Seq %d Value %s, sleeping..\n", px.me, seq, value)
       time.Sleep(500 * time.Millisecond)
     }
     px.mu.Lock()
@@ -226,15 +224,12 @@ func (px *Paxos) Proposer(seq int, value interface{}) error {
 
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
   px.mu.Lock()
-  //px.peersDone[args.PeerID] = args.DoneSeq
 
   if _, ok := px.agreements[args.Seq]; !ok || px.agreements[args.Seq] == nil {
-    //fmt.Printf("No agreement yet, making one..\n")
     px.agreements[args.Seq] = &Agreement{seq: args.Seq}
   }
 
   if args.N > px.agreements[args.Seq].n_p {
-    //fmt.Printf("%d: Proposal %d from %d for seq %d value %s is bigger than %d\n", px.me, args.N, args.PeerID, args.Seq, args.Value, px.agreements[args.Seq].n_p)
     px.agreements[args.Seq].n_p = args.N
     reply.Reply = OK
 
@@ -243,7 +238,6 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
       reply.N_a = 0
       reply.Reply = OKNOVALUE
     } else {
-      //fmt.Printf("%d has already agreed on %s\n", px.me, px.agreements[args.Seq].v_a)
       reply.Value_a = px.agreements[args.Seq].v_a
       reply.N_a = px.agreements[args.Seq].n_a
     }
@@ -258,17 +252,14 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
   px.mu.Lock()
-  //px.peersDone[args.PeerID] = args.DoneSeq
 
   if px.agreements[args.Seq] != nil {
     if args.N >= px.agreements[args.Seq].n_p {
-      //fmt.Printf("Accept for Paxos %d seq %d value %s\n", px.me, args.Seq, args.Value)
       px.agreements[args.Seq].n_p = args.N
       px.agreements[args.Seq].n_a = args.N
       px.agreements[args.Seq].v_a = args.Value
       reply.Reply = OK
     } else {
-      //fmt.Printf("Accept rejected for Paxos %d seq %d value %s\n", px.me, args.Seq, args.Value)
       reply.Reply = Reject
     }
   }
@@ -279,8 +270,6 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 func (px *Paxos) Decide(args *DecidedArgs, reply *DecidedReply) error {
   px.mu.Lock()
   if px.agreements[args.Seq] != nil && !px.agreements[args.Seq].decided{
-    //fmt.Printf("%d decided on value %s for sequence number %d\n", px.me, args.Value, args.Seq)
-    //fmt.Printf("%d piggybacked done seq number %d from %d\n", px.me, args.DoneSeq, args.PeerID)
     px.agreements[args.Seq].v_final = args.Value
     px.agreements[args.Seq].decided = true
     reply.Reply = OK
@@ -305,7 +294,6 @@ func (px *Paxos) Decide(args *DecidedArgs, reply *DecidedReply) error {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) {
-  //fmt.Printf("Sequence number: %d, Current min: %d\n", seq, px.Min())
   if seq >= px.Min() {
     _, ok := px.agreements[seq]
     if !ok || px.agreements[seq] == nil{
@@ -335,17 +323,14 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-  //fmt.Printf("Server %d Done with %d, Highest done so far: %d\n", px.me, seq, px.highestDone)
   if seq > px.highestDone {
     px.highestDone = seq
   }
 
   px.mu.Lock()
   min := px.Min()
-  //fmt.Printf("Minimum seq number %d is done with: %d\n", px.me, min)
   for seq, _ := range px.agreements {
     if seq < min {
-      // fmt.Printf("Server %d freeing %d\n", px.me, seq)
       px.agreements[seq] = nil
     }
   }
@@ -390,7 +375,7 @@ func (px *Paxos) Max() int {
 // instances.
 // 
 func (px *Paxos) Min() int {
-  min := math.MaxInt64
+  min := math.MaxInt32
   for i := 0; i < len(px.peersDone); i++ {
     if px.peersDone[i] < min {
       min = px.peersDone[i]
