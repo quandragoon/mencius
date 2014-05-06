@@ -11,6 +11,7 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
+import "math"
 import "shardmaster"
 import "strconv"
 import "reflect"
@@ -66,10 +67,12 @@ type ShardKV struct {
   gid int64 // my replica group ID
 
   // Your definitions here.
+  meString string
   keyvalues map[int]map[string]RequestValue // Map of viewnums to keyvalues
   putRequests map[int64]DuplicatePut
   getRequests map[int64]DuplicateGet
   config shardmaster.Config
+  peersDone map[string]int
 }
 
 func (kv *ShardKV) Agreement(op Op) int {
@@ -103,6 +106,44 @@ func (kv *ShardKV) Agreement(op Op) int {
   }
 }
 
+func (kv *ShardKV) FreeSnapshots() {
+  // Memory management
+  // Update list of servers
+  for gid, servers := range(kv.config.Groups) {
+    for _, server := range(servers) {
+      if _, ok := kv.peersDone[server]; !ok && gid != kv.gid {
+        kv.peersDone[server] = 0;
+      }
+    }
+  }
+  // Update self
+  kv.ConfigDone(kv.config.Num - 1, kv.meString)
+
+  // Find min
+  min := math.MaxInt32
+  for _, config := range(kv.peersDone) {
+    if config < min {
+      min = config
+    }
+  }
+
+  // Release everything below the min
+  for i := 0; i < min; i++ {
+    if _, ok := kv.keyvalues[i]; ok {
+      kv.keyvalues[i] = nil
+    }
+  }
+
+  DPrintf("[%d %d] Min config among peers is %d. %s", kv.gid, kv.me, min, kv.keyvalues[1])
+}
+
+func (kv *ShardKV) ConfigDone(num int, server string) {
+  val, ok := kv.peersDone[server]
+  if !ok || val < num {
+    kv.peersDone[server] = num
+  }
+}
+
 func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
   newConfig := kv.sm.Query(idx)
   if newConfig.Num > kv.config.Num {
@@ -132,7 +173,7 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
 
     for shard, gid := range(newConfig.Shards) {
       if gid == kv.gid && kv.config.Shards[shard] != kv.gid {
-        updates[shard] = &UpdateArgs{idx - 1, shard, kv.gid, kv.me}
+        updates[shard] = &UpdateArgs{idx - 1, shard, kv.gid, kv.me, kv.meString}
       }
     }
 
@@ -167,21 +208,19 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
             }
 
             updated = true
-            break outer
+
+            // If updated is true, then the contacted server has config number idx - 1
+            kv.ConfigDone(update.Num, server)
           } else {
             DPrintf("%d [%s %d %d] Group %d server %s had no keys to give for shard %d config %d: %b, %b\n", idx, opType, kv.gid, kv.me, gid, server, shard, update.Num, requestOk, updated)
             //time.Sleep(time.Millisecond * 100)
           }
         }
+        if updated {
+          break outer
+        }
         time.Sleep(time.Millisecond * 100)
       }
-        //if !updated {
-        //  update.Num = update.Num - 1
-        //  time.Sleep(to * 1000) // Prevent too many RPC calls at once
-        //  pastConfig = kv.sm.Query(update.Num)
-        //  gid = pastConfig.Shards[shard]
-        //}
-      //}
     }
     keyvalues = ""
     for k, v := range(kv.keyvalues[idx]) {
@@ -189,6 +228,7 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
     }
     DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
     kv.config = newConfig // Not sure about this
+    kv.FreeSnapshots()
   }
 }
 
@@ -364,6 +404,12 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
       }
       if len(keysSent) == 0 {
         reply.Err = OK
+
+        // Server contacting this one is done with the config number
+        val, ok := kv.peersDone[args.ServerString]
+        if !ok || val < args.Num {
+          kv.peersDone[args.ServerString] = args.Num
+        }
         DPrintf("%d [UPDATE %d %d] No keys to send to server %d from group %d!\n", args.Num, kv.gid, kv.me, args.Server, args.Group)
         return nil
       } else {
@@ -372,6 +418,8 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
         reply.ClientPut = kv.putRequests
         reply.ClientGet = kv.getRequests
         reply.Err = OK
+        // Server contacting this one is done with the config number
+        kv.ConfigDone(args.Num, args.ServerString)
         return nil
       }
     }
@@ -436,12 +484,15 @@ func StartServer(gid int64, shardmasters []string,
   kv.me = me
   kv.gid = gid
   kv.sm = shardmaster.MakeClerk(shardmasters)
+  kv.meString = servers[kv.me]
 
   // Your initialization code here.
   kv.keyvalues = make(map[int]map[string]RequestValue)
   kv.keyvalues[0] = make(map[string]RequestValue)
   kv.getRequests = make(map[int64]DuplicateGet)
   kv.putRequests = make(map[int64]DuplicatePut)
+  kv.peersDone = make(map[string]int)
+  kv.peersDone[kv.meString] = 0
   // Don't call Join().
 
   rpcs := rpc.NewServer()

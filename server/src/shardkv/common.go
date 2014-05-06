@@ -53,6 +53,7 @@ type UpdateArgs struct {
   Shard int
   Group int64
   Server int
+  ServerString string
 }
 
 type UpdateReply struct {

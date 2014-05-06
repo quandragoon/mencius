@@ -325,3 +325,78 @@ func TestConcurrentUnreliable(t *testing.T) {
   doConcurrent(t, true)
   fmt.Printf("  ... Passed\n")
 }
+
+// func TestForgetMem(t *testing.T) {
+//   smh, gids, ha, _, clean := setup("basic", false)
+//   defer clean()
+
+//   fmt.Printf("Test: Servers free forgotten instance memory ...\n")
+
+//   mck := shardmaster.MakeClerk(smh)
+//   mck.Join(gids[0], ha[0])
+
+//   ck := MakeClerk(smh)
+
+//   ck.Put("a", "x")
+//   v := ck.PutHash("a", "b")
+//   if v != "x" {
+//     t.Fatalf("Puthash got wrong value")
+//   }
+//   ov := NextValue("x", "b")
+//   if ck.Get("a") != ov {
+//     t.Fatalf("Get got wrong value")
+//   }
+
+//   keys := make([]string, 10)
+//   vals := make([]string, len(keys))
+//   for i := 0; i < len(keys); i++ {
+//     keys[i] = strconv.Itoa(rand.Int())
+//     vals[i] = strconv.Itoa(rand.Int())
+//     ck.Put(keys[i], vals[i])
+//   }
+
+//   runtime.GC()
+//   var m0 runtime.MemStats
+//   runtime.ReadMemStats(&m0)
+
+//   // m0.Alloc about a megabyte
+
+//   for i := 1; i <= 10; i++ {
+//     big := make([]byte, 1000000)
+//     for j := 0; j < len(big); j++ {
+//       big[j] = byte('a' + rand.Int() % 26)
+//     }
+//     pxa[0].Start(i, string(big))
+//     waitn(t, pxa, i, npaxos)
+//   }
+
+//   runtime.GC()
+//   var m1 runtime.MemStats
+//   runtime.ReadMemStats(&m1)
+
+//   // m1.Alloc about 90 megabytes
+
+//   for i := 0; i < npaxos; i++ {
+//     pxa[i].Done(10)
+//   }
+//   for i := 0; i < npaxos; i++ {
+//     pxa[i].Start(11 + i, "z")
+//   }
+//   time.Sleep(3 * time.Second)
+//   for i := 0; i < npaxos; i++ {
+//     if pxa[i].Min() != 11 {
+//       t.Fatalf("expected Min() %v, got %v\n", 11, pxa[i].Min())
+//     }
+//   }
+
+//   runtime.GC()
+//   var m2 runtime.MemStats
+//   runtime.ReadMemStats(&m2)
+//   // m2.Alloc about 10 megabytes
+
+//   if m2.Alloc > (m1.Alloc / 2) {
+//     t.Fatalf("memory use did not shrink enough")
+//   }
+
+//   fmt.Printf("  ... Passed\n")
+// }
