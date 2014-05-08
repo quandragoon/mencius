@@ -40,22 +40,28 @@ func waitnBenchmark(b *testing.B, pxa[]*Paxos, seq int, wanted int) {
   }
 }
 
-func BenchmarkRoundtrip(b *testing.B) {
-  const npaxos = 3
-  var pxa []*Paxos = make([]*Paxos, npaxos)
-  var pxh []string = make([]string, npaxos)
-  defer cleanup(pxa)
+func waitmajorityBenchmark(b *testing.B, pxa[]*Paxos, seq int) {
+  waitnBenchmark(b, pxa, seq, (len(pxa) / 2) + 1)
+}
 
-  for i := 0; i < npaxos; i++ {
-    pxh[i] = port("basic", i)
-  }
-  for i := 0; i < npaxos; i++ {
-    pxa[i] = Make(pxh, i, nil)
-  }
-  b.ResetTimer()
+func BenchmarkRoundtrip(b *testing.B) {
   for i := 0; i < b.N; i++ {
+    b.StopTimer()
+    const npaxos = 3
+    var pxa []*Paxos = make([]*Paxos, npaxos)
+    var pxh []string = make([]string, npaxos)
+
+    for i := 0; i < npaxos; i++ {
+      pxh[i] = port("basic", i)
+    }
+    for i := 0; i < npaxos; i++ {
+      pxa[i] = Make(pxh, i, nil)
+    }
+    b.StartTimer()
     pxa[0].Start(0, "hello")
     waitnBenchmark(b, pxa, 0, npaxos)
+    b.StopTimer()
+    cleanup(pxa)
   }
 }
 
@@ -71,12 +77,16 @@ func BenchmarkConflictThree(b *testing.B) {
   for i := 0; i < npaxos; i++ {
     pxa[i] = Make(pxh, i, nil)
   }
+  b.StartTimer()
+  for j := 0; j < npaxos; j++ {
+    pxa[j].Start(0, j*100)
+  }
   b.ResetTimer()
-  for i := 0; i < b.N; i++ {
+  for i := 1; i < b.N; i++ {
     for j := 0; j < npaxos; j++ {
-      pxa[j].Start(0, j*100)
+      pxa[j].Start(i, j*100)
     }
-    waitnBenchmark(b, pxa, 0, npaxos)
+    waitmajorityBenchmark(b, pxa, i)
   }
 }
 
@@ -92,11 +102,15 @@ func BenchmarkConflictFive(b *testing.B) {
   for i := 0; i < npaxos; i++ {
     pxa[i] = Make(pxh, i, nil)
   }
+  b.StartTimer()
+  for j := 0; j < npaxos; j++ {
+    pxa[j].Start(0, j*100)
+  }
   b.ResetTimer()
-  for i := 0; i < b.N; i++ {
+  for i := 1; i < b.N; i++ {
     for j := 0; j < npaxos; j++ {
-      pxa[j].Start(0, j*100)
+      pxa[j].Start(i, j*100)
     }
-    waitnBenchmark(b, pxa, 0, npaxos)
+    waitmajorityBenchmark(b, pxa, i)
   }
 }
