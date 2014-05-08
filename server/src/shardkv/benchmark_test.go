@@ -67,9 +67,13 @@ func BenchmarkGetAfterJoin(b *testing.B) {
     }
     b.StartTimer()
     mck.Join(gids[1], ha[1])
-    time.Sleep(250 * time.Millisecond)
-    ck.Get(keys[5])
+    time.Sleep(100 * time.Millisecond)
+    v :=ck.Get(keys[5])
     b.StopTimer()
+    if v != vals[5] {
+      b.Fatalf("joining; wrong value; g=%v k=%v wanted=%v got=%v",
+          1, keys[5], vals[5], v)
+    }
     clean()
   }
 }
