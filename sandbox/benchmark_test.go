@@ -36,6 +36,20 @@ func BenchmarkDiskWrites(b *testing.B) {
   }
 }
 
+func BenchmarkDiskWritesIOUtil(b *testing.B) {
+  basePath := "/tmp/Data"
+  d := new(DiskIO)
+  d.BasePath = basePath
+  b.ResetTimer()
+  for i := 0; i < b.N; i++ {
+    big := make([]byte, 10)
+    for j := 0; j < len(big); j++ {
+      big[j] = byte('a' + rand.Int() % 26)
+    }
+    d.writeIOUtil(0, string(i * 10), string(big))
+  }
+}
+
 func BenchmarkMemoryReads(b *testing.B) {
   keyvalues := make(map[int]map[int]string)
   keyvalues[0] = make(map[int]string)
