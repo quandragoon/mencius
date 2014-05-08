@@ -4,7 +4,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strings"
 	"fmt"
 	"sync"
 	"strconv"
@@ -23,47 +22,21 @@ type simpleWriteCloser struct {
 func (wc *simpleWriteCloser) Write(p []byte) (int, error) { return wc.w.Write(p) }
 func (wc *simpleWriteCloser) Close() error                { return nil }
 
-func (d *DiskIO) writeIOUtil(config int, key string, val string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	path := d.BasePath + "/" + strconv.Itoa(config) + "/" + key
-
-	var perm os.FileMode = 0666
-
-	ioutil.WriteFile(path, []byte(key), perm)
-
-	return nil
-}
-
 func (d *DiskIO) write(config int, key string, val string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	path := d.BasePath + "/" + strconv.Itoa(config) + "/" + key
+	dirpath := d.BasePath + "/" + strconv.Itoa(config)
+	fullpath := dirpath + "/" + key
 
-	var perm os.FileMode = 0666
-	mode := os.O_WRONLY | os.O_CREATE | os.O_TRUNC // overwrite if exists
+	var pathPerm os.FileMode = 0777
+	var filePerm os.FileMode = 0666
 
-	f, err := os.OpenFile(path, mode, perm)
-	if err != nil {
+	if err := os.MkdirAll(dirpath, pathPerm); err != nil {
 		return err
 	}
 
-	r := strings.NewReader(val)
-
-	var wc io.WriteCloser = &simpleWriteCloser{f}
-
-	if _, err := io.Copy(wc, r); err != nil {
-		f.Close() // error deliberately ignored
-		return err
-	}
-	if err := wc.Close(); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
+	ioutil.WriteFile(fullpath, []byte(val), filePerm)
 
 	return nil
 }
@@ -81,6 +54,7 @@ func (d *DiskIO) read(config int, key string) (string, error) {
 	if fi.IsDir() {
 		return "", os.ErrNotExist
 	}
+
 	dat, err := ioutil.ReadFile(path)
 	if err != nil {
 		return "", err 
@@ -120,8 +94,8 @@ func main() {
 	d := new(DiskIO)
 	d.BasePath = basePath
 
-	d.write(0,"testkey123","testval123")
-	val, err := d.read(0,"testkey123")
+	d.write(1,"testkey123","testval123")
+	val, err := d.read(1,"testkey123")
 	if err != nil {
 		fmt.Printf("Something went wrong")
 		return
@@ -129,7 +103,7 @@ func main() {
 
 	fmt.Println("Received val:", val)
 
-	testMap, _ := d.export(0)
+	testMap, _ := d.export(1)
 
 	fmt.Println("Map val:", testMap["testkey123"])
 
