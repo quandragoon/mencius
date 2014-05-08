@@ -23,6 +23,19 @@ type simpleWriteCloser struct {
 func (wc *simpleWriteCloser) Write(p []byte) (int, error) { return wc.w.Write(p) }
 func (wc *simpleWriteCloser) Close() error                { return nil }
 
+func (d *DiskIO) writeIOUtil(config int, key string, val string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	path := d.BasePath + "/" + strconv.Itoa(config) + "/" + key
+
+	var perm os.FileMode = 0666
+
+	ioutil.WriteFile(path, []byte(key), perm)
+
+	return nil
+}
+
 func (d *DiskIO) write(config int, key string, val string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -30,16 +43,13 @@ func (d *DiskIO) write(config int, key string, val string) error {
 	path := d.BasePath + "/" + strconv.Itoa(config) + "/" + key
 
 	var perm os.FileMode = 0666
-/*
 	mode := os.O_WRONLY | os.O_CREATE | os.O_TRUNC // overwrite if exists
 
 	f, err := os.OpenFile(path, mode, perm)
 	if err != nil {
 		return err
 	}
-*/
-	ioutil.WriteFile(path, []byte(key), perm)
-/*
+
 	r := strings.NewReader(val)
 
 	var wc io.WriteCloser = &simpleWriteCloser{f}
@@ -55,8 +65,6 @@ func (d *DiskIO) write(config int, key string, val string) error {
 		return err
 	}
 
-	fmt.Printf("writing to %s \n", path)
-*/
 	return nil
 }
 
