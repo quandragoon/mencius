@@ -63,10 +63,10 @@ func (d *DiskIO) readPaxosLogOnDisk(config int) (MetaData, error) {
 
 	fi, err := os.Stat(path)
 	if err != nil {
-		return null, err
+		return MetaData{}, err
 	}
 	if fi.IsDir() {
-		return nil, os.ErrNotExist
+		return MetaData{}, os.ErrNotExist
 	}
 
 	dat, err := ioutil.ReadFile(path)
@@ -175,5 +175,5 @@ func main() {
 	d.writePaxosLogOnDisk(1, px)
 
 	npx, err := d.readPaxosLogOnDisk(1)
-	fmt.Println("State config: ",npx.(MetaData).Config)
+	fmt.Println("State config: ",npx.Config)
 }
