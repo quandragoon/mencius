@@ -358,7 +358,7 @@ func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}) {
 // call Status() to find out if/when agreement
 // is reached.
 //
-func (px *Paxos) Start(seq int, v interface{}) {
+func (px *Paxos) Start(seq int, v interface{}) int{
   px.mu.Lock()
   defer px.mu.Unlock()
 
@@ -370,8 +370,8 @@ func (px *Paxos) Start(seq int, v interface{}) {
   px.instancesMapMu.Unlock()
 
 
-  deadServerTimeout := 100
-  sleepTime := 20
+  deadServerTimeout := 10
+  sleepTime := 2
   totalWait := 0
   px.hasIncomingOp = true
 
@@ -402,6 +402,8 @@ func (px *Paxos) Start(seq int, v interface{}) {
 
   go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v)
   px.hasIncomingOp = false
+
+  return px.currentInstanceNum
 }
 
 func (px *Paxos) MenciusBackgroundThread() {
@@ -554,7 +556,7 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
       px.instancesMapMu.Unlock()
       px.mu.Unlock()
 
-      time.Sleep(100*time.Millisecond)
+      time.Sleep(10*time.Millisecond)
     }
   }()
 

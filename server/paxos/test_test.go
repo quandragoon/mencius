@@ -872,3 +872,31 @@ func TestLots(t *testing.T) {
 
   fmt.Printf("  ... Passed\n")
 }
+
+
+func TestSpeed(t *testing.T) {
+  runtime.GOMAXPROCS(4)
+
+  const npaxos = 5
+  var pxa []*Paxos = make([]*Paxos, npaxos)
+  var pxh []string = make([]string, npaxos)
+  defer cleanup(pxa)
+
+  for i := 0; i < npaxos; i++ {
+    pxh[i] = port("speed", i)
+  }
+  for i := 0; i < npaxos; i++ {
+    pxa[i] = Make(pxh, i, nil)
+  }
+
+  fmt.Printf("Test: Speed of 5 servers, uniform load ...\n")
+
+  rounds := 100
+  for i := 0; i < rounds; i++ {
+    pxa[i % npaxos].Start(i, 100 + i)
+  }
+
+  waitn(t, pxa, rounds - 1, npaxos)
+
+  fmt.Printf("  ... Passed\n")
+}
