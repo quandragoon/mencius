@@ -4,7 +4,7 @@ import "net"
 import "fmt"
 import "net/rpc"
 import "log"
-import "paxos"
+import "mencius"
 import "sync"
 import "os"
 import "syscall"
@@ -13,7 +13,7 @@ import "math/rand"
 import "math"
 import "time"
 
-const DEBUG = false
+const DEBUG = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if DEBUG {
@@ -97,7 +97,8 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
       decided, val := sm.px.Status(curSeqNum)
       // DPrintf("%s %d: Waiting for response for GID %d\n", opType, op.GID, op.GID)
       if decided {
-        if OpsAreEqual(val.(Op), op) {
+        val, ok := val.(Op)
+        if ok && OpsAreEqual(val, op) {
           // Check if agreed on instance is this instance
           DPrintf("%s %d: Decided on op with sequence number %d\n", opType, op.GID, curSeqNum)
           return curSeqNum
@@ -123,21 +124,23 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
 func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
   DPrintf("%s %d: Catching up first\n", opType, GID)
   // Catchup
-  curSeq := sm.px.Min()
+  //curSeq := sm.px.Min()
+  curSeq := sm.px.CurrentInstanceNum()
   for curSeq < seqNum {
     decided, val := sm.px.Status(curSeq)
     if decided {
-      if val.(Op).Type != QUERY { // Don't care about QUERY ops
+      val, ok := val.(Op)
+      if ok && val.Type != QUERY && val.Type != ""{ // Don't care about QUERY ops
         if (len(sm.configSeqNum) > 0 && curSeq > sm.configSeqNum[len(sm.configSeqNum) - 1]) || len(sm.configSeqNum) == 0 { 
-          DPrintf("%s %d: Checking sequence number %d\n", opType, GID, curSeq)
-          sm.ExtendAndCopy(val.(Op).Type, val.(Op).GID, val.(Op).Servers, curSeq)
+          DPrintf("%s %d: Checking sequence number %d, type %s, %s\n", opType, GID, curSeq, val.Type, val)
+          sm.ExtendAndCopy(val.Type, val.GID, val.Servers, curSeq)
           switch {
-          case val.(Op).Type == JOIN:
-            sm.BalanceJoin(val.(Op).GID)
-          case val.(Op).Type == LEAVE:
-            sm.BalanceLeave(val.(Op).GID)
-          case val.(Op).Type == MOVE:
-            sm.BalanceMove(val.(Op).GID, val.(Op).Shard)
+          case val.Type == JOIN:
+            sm.BalanceJoin(val.GID)
+          case val.Type == LEAVE:
+            sm.BalanceLeave(val.GID)
+          case val.Type == MOVE:
+            sm.BalanceMove(val.GID, val.Shard)
           }
         }
       }
@@ -145,22 +148,22 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
     } else {
       if curSeq >= sm.px.Min() {
         DPrintf("%s %d: Sequence number %d not decided yet, waiting...\n", opType, GID, curSeq)
-        noOp := Op{"", 0, -1, []string{}}
-        sm.px.Start(curSeq, noOp)
-        to := time.Millisecond
-        for {
-          decided, _ := sm.px.Status(curSeq)
-          if decided {
-            break
-          }
-          time.Sleep(to)
-          if to < 10 * time.Second {
-            to *= 2
-          }
+      //   noOp := Op{"", 0, -1, []string{}}
+      //   sm.px.Start(curSeq, noOp)
+      //   to := time.Millisecond
+      //   for {
+      //     decided, _ := sm.px.Status(curSeq)
+      //     if decided {
+      //       break
+      //     }
+      //     time.Sleep(to)
+      //     if to < 10 * time.Second {
+      //       to *= 2
+      //     }
         }
-      } else {
-        curSeq++
-      }
+      // } else {
+      //   curSeq++
+      // }
     }
   }
   DPrintf("%s %d: Finished catchup\n", opType, GID)
