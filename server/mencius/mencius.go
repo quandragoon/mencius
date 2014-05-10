@@ -400,7 +400,7 @@ func (px *Paxos) Start(seq int, v interface{}) int{
     }
   }
 
-  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v)
+  go px.proposeAcceptPhase(px.currentInstanceNum, px.generateProposalNumber(), v)
   px.hasIncomingOp = false
 
   return px.currentInstanceNum
