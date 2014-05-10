@@ -215,7 +215,7 @@ func (px *Paxos) DecidedHandler(args *Decided, reply *DecidedOK) error {
   px.instancesMapMu.Unlock()
 
 
-  // px.currentInstanceNum += 1
+  px.currentInstanceNum += 1
   agreementInstance.Decided = true
   agreementInstance.DecidedVal = args.Val_Decided
 
@@ -362,12 +362,12 @@ func (px *Paxos) Start(seq int, v interface{}) int{
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  px.instancesMapMu.Lock()
-  if _, exist := px.instances[seq]; !exist {
-    agreementInstance := px.makeNewAgreementInstance(seq)
-    px.instances[seq] = &agreementInstance
-  }
-  px.instancesMapMu.Unlock()
+  // px.instancesMapMu.Lock()
+  // if _, exist := px.instances[seq]; !exist {
+  //   agreementInstance := px.makeNewAgreementInstance(seq)
+  //   px.instances[seq] = &agreementInstance
+  // }
+  // px.instancesMapMu.Unlock()
 
 
   deadServerTimeout := 10
@@ -400,7 +400,7 @@ func (px *Paxos) Start(seq int, v interface{}) int{
     }
   }
 
-  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v)
+  go px.proposeAcceptPhase(px.currentInstanceNum, px.generateProposalNumber(), v)
   px.hasIncomingOp = false
 
   return px.currentInstanceNum
@@ -486,10 +486,6 @@ func (px *Paxos) Min() int {
   }
 
   return min + 1
-}
-
-func (px *Paxos) CurrentInstanceNum() int {
-  return px.currentInstanceNum
 }
 
 //

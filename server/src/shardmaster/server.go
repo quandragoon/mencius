@@ -108,7 +108,7 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
           curSeqNum = sm.px.Max() + 1
           // sm.Catchup(curSeqNum, opType, op.GID)
           op = Op{opType, op.GID, op.Shard, op.Servers}
-          sm.px.Start(curSeqNum, op)
+          curSeqNum = sm.px.Start(curSeqNum, op)
           DPrintf("%s %d: No decision was made! Trying sequence number %d\n", opType, op.GID, curSeqNum)
           break
         }
@@ -124,8 +124,7 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
 func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
   DPrintf("%s %d: Catching up first\n", opType, GID)
   // Catchup
-  //curSeq := sm.px.Min()
-  curSeq := sm.px.CurrentInstanceNum()
+  curSeq := sm.px.Min()
   for curSeq < seqNum {
     decided, val := sm.px.Status(curSeq)
     if decided {
@@ -148,22 +147,22 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
     } else {
       if curSeq >= sm.px.Min() {
         DPrintf("%s %d: Sequence number %d not decided yet, waiting...\n", opType, GID, curSeq)
-      //   noOp := Op{"", 0, -1, []string{}}
-      //   sm.px.Start(curSeq, noOp)
-      //   to := time.Millisecond
-      //   for {
-      //     decided, _ := sm.px.Status(curSeq)
-      //     if decided {
-      //       break
-      //     }
-      //     time.Sleep(to)
-      //     if to < 10 * time.Second {
-      //       to *= 2
-      //     }
+        noOp := Op{"", 0, -1, []string{}}
+        sm.px.Start(curSeq, noOp)
+        to := time.Millisecond
+        for {
+          decided, _ := sm.px.Status(curSeq)
+          if decided {
+            break
+          }
+          time.Sleep(to)
+          if to < 10 * time.Second {
+            to *= 2
+          }
         }
-      // } else {
-      //   curSeq++
-      // }
+      } else {
+        curSeq++
+      }
     }
   }
   DPrintf("%s %d: Finished catchup\n", opType, GID)
@@ -321,7 +320,7 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
   joinOp := Op{JOIN, args.GID, -1, args.Servers}
 
   seqNum := sm.px.Max() + 1
-  sm.px.Start(seqNum, joinOp)
+  seqNum = sm.px.Start(seqNum, joinOp)
 
   seqNum = sm.ProposeOp(joinOp, seqNum, JOIN)
   DPrintf("JOIN %d: shard assignments before catchup\n", args.GID)
@@ -357,7 +356,7 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) error {
   leaveOp := Op{LEAVE, args.GID, -1, []string{}}
 
   seqNum := sm.px.Max() + 1
-  sm.px.Start(seqNum, leaveOp)
+  seqNum = sm.px.Start(seqNum, leaveOp)
 
   seqNum = sm.ProposeOp(leaveOp, seqNum, LEAVE)
   DPrintf("LEAVE %d: shard assignments before catchup\n", args.GID)
@@ -392,7 +391,7 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) error {
   leaveOp := Op{MOVE, args.GID, args.Shard, []string{}}
 
   seqNum := sm.px.Max() + 1
-  sm.px.Start(seqNum, leaveOp)
+  seqNum = sm.px.Start(seqNum, leaveOp)
 
   seqNum = sm.ProposeOp(leaveOp, seqNum, MOVE)
   sm.Catchup(seqNum, MOVE, args.GID)
@@ -423,7 +422,7 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) error {
   queryOp := Op{QUERY, -1, -1, []string{}}
 
   seqNum := sm.px.Max() + 1
-  sm.px.Start(seqNum, queryOp)
+  seqNum = sm.px.Start(seqNum, queryOp)
 
   seqNum = sm.ProposeOp(queryOp, seqNum, QUERY)
   sm.Catchup(seqNum, QUERY, 0)
