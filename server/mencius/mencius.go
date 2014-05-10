@@ -362,12 +362,12 @@ func (px *Paxos) Start(seq int, v interface{}) int{
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  px.instancesMapMu.Lock()
-  if _, exist := px.instances[seq]; !exist {
-    agreementInstance := px.makeNewAgreementInstance(seq)
-    px.instances[seq] = &agreementInstance
-  }
-  px.instancesMapMu.Unlock()
+  // px.instancesMapMu.Lock()
+  // if _, exist := px.instances[seq]; !exist {
+  //   agreementInstance := px.makeNewAgreementInstance(seq)
+  //   px.instances[seq] = &agreementInstance
+  // }
+  // px.instancesMapMu.Unlock()
 
 
   deadServerTimeout := 10
