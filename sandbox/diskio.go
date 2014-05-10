@@ -59,6 +59,9 @@ func (d *DiskIO) writePaxosLogOnDisk(config int, paxosLog interface{}) error {
 }
 
 func (d *DiskIO) readPaxosLogOnDisk(config int) (MetaData, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	path := d.BasePath + "/" + strconv.Itoa(config) + "/paxos_state"
 
 	fi, err := os.Stat(path)
@@ -101,6 +104,26 @@ func (d *DiskIO) write(config int, key string, val string) error {
 	}
 
 	ioutil.WriteFile(fullpath, []byte(val), filePerm)
+
+	return nil
+}
+
+func (d *DiskIO) writeMap(config int, mapToWrite map[string]string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	dirpath := d.BasePath + "/" + strconv.Itoa(config)
+	var pathPerm os.FileMode = 0777
+	var filePerm os.FileMode = 0666
+
+	if err := os.MkdirAll(dirpath, pathPerm); err != nil {
+		return err
+	}
+
+	for key, val := range mapToWrite {
+		fullpath := dirpath + "/" + key
+		ioutil.WriteFile(fullpath, []byte(val), filePerm)
+	}
 
 	return nil
 }

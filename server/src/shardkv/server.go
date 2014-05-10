@@ -67,6 +67,8 @@ type ShardKV struct {
   gid int64 // my replica group ID
 
   // Your definitions here.
+  diskIO DiskIO
+
   meString string
   keyvalues map[int]map[string]RequestValue // Map of viewnums to keyvalues
   putRequests map[int64]DuplicatePut
@@ -227,7 +229,10 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
       keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
     }
     DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
+//	fmt.Printf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
     kv.config = newConfig // Not sure about this
+//	fmt.Println(opType, " Writing reconfig to disk: ",kv.me," conf:",newConfig.Num)
+	kv.diskIO.writeMap(idx, kv.keyvalues[idx])
     kv.FreeSnapshots()
   }
 }
@@ -314,13 +319,18 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
       seqNum := kv.Agreement(getOp)
       kv.Catchup(seqNum, GET, true)
       if kv.config.Shards[key2shard(args.Key)] == kv.gid {
-        val, ok := kv.keyvalues[kv.config.Num][args.Key]
-        if !ok {
+        testval, _ := kv.keyvalues[kv.config.Num][args.Key]
+		val, e := kv.diskIO.readValue(kv.config.Num, args.Key)
+        if e != nil {
           reply.Err = ErrNoKey
         } else {
           reply.Err = OK
           reply.Value = val.Value
+		  if (val.Value != testval.Value) {
+//		 	fmt.Println("Check get! ", kv.config.Num, " key: ", args.Key, " memval: ", val.Value, " diskval: ",testval.Value)
+		  }
           DPrintf("%d [GET %s, %d | %d %d] %d: Returning %s for key %s\n", kv.config.Num, args.Key, key2shard(args.Key),kv.gid, kv.me, args.ClientID, val.Value, args.Key)
+          fmt.Printf("%d [GET %s, %d | %d %d] %d: Returning %s for key %s\n", kv.config.Num, args.Key, key2shard(args.Key),kv.gid, kv.me, args.ClientID, val.Value, args.Key)
         }
         kv.px.Done(seqNum)
       } else {
@@ -365,6 +375,11 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
           // Make sure at once
           kv.keyvalues[kv.config.Num][args.Key] = RequestValue{newval, args.ClientID, args.RequestTime, seqNum, kv.config.Num}
           kv.putRequests[args.ClientID] = DuplicatePut{args.RequestTime, reply.PreviousValue}
+//		  fmt.Println("Writing to disk: ",kv.config.Num," key: ",args.Key," val: ", newval)
+		  err := kv.diskIO.writeEncode(kv.config.Num, args.Key, kv.keyvalues[kv.config.Num][args.Key])
+		  if err != nil {
+			fmt.Println("Could not write ", kv.config.Num, " key: ",args.Key, "err: ",err.Error())
+		  }
         } else {
           // Otherwise send back the previous previous-value
           reply.PreviousValue = kv.putRequests[args.ClientID].PreviousValue
@@ -487,6 +502,9 @@ func StartServer(gid int64, shardmasters []string,
   kv.meString = servers[kv.me]
 
   // Your initialization code here.
+  kv.diskIO.BasePath = "/tmp/Data"
+  kv.diskIO.me = strconv.FormatInt(gid,10)
+
   kv.keyvalues = make(map[int]map[string]RequestValue)
   kv.keyvalues[0] = make(map[string]RequestValue)
   kv.getRequests = make(map[int64]DuplicateGet)
