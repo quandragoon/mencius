@@ -37,7 +37,7 @@ func mcleanup(sma []*shardmaster.ShardMaster) {
 func cleanup(sa [][]*ShardKV) {
   for i := 0; i < len(sa); i++ {
     for j := 0; j < len(sa[i]); j++ {
-      sa[i][j].kill()
+      sa[i][j].Kill()
     }
   }
 }
@@ -65,36 +65,42 @@ func setup(tag string, unreliable bool) ([]string, []int64, [][]string, [][]*Sha
   const nreplicas = 3 // servers per group
   gids := make([]int64, ngroups)    // each group ID
   ha := make([][]string, ngroups)   // ShardKV ports, [group][replica]
-  // sa := make([][]*ShardKV, ngroups) // ShardKVs
-  // // defer cleanup(sa)
-  // for i := 0; i < ngroups; i++ {
-  //   gids[i] = int64(i + 100)
-  //   sa[i] = make([]*ShardKV, nreplicas)
-  //   ha[i] = make([]string, nreplicas)
-  //   for j := 0; j < nreplicas; j++ {
-  //     ha[i][j] = port(tag+"s", (i*nreplicas)+j)
-  //   }
-  //   for j := 0; j < nreplicas; j++ {
-  //     sa[i][j] = StartServer(gids[i], smh, ha[i], j)
-  //     sa[i][j].unreliable = unreliable
-  //   }
-  // }
-
-  // clean := func() { cleanup(sa) ; 
-  //   //mcleanup(sma) 
-  // }
-  const IP = "127.0.0.1"
-  ha := make([][]string, ngroups)
-  gids := make([]int64, ngroups)
+  
+  // Local shard KV servers
+  sa := make([][]*ShardKV, ngroups) // ShardKVs
+  // defer cleanup(sa)
   for i := 0; i < ngroups; i++ {
     gids[i] = int64(i + 100)
+    sa[i] = make([]*ShardKV, nreplicas)
     ha[i] = make([]string, nreplicas)
     for j := 0; j < nreplicas; j++ {
-      ha[i][j] = IP + ":80" + strconv.Itoa(80 + i * ngroups + j + 3)
+      ha[i][j] = port(tag+"s", (i*nreplicas)+j)
+    }
+    for j := 0; j < nreplicas; j++ {
+      sa[i][j] = StartServer(gids[i], smh, ha[i], j)
+      sa[i][j].unreliable = unreliable
     }
   }
 
-  return smh, gids, ha, nil, clean
+  clean := func() { cleanup(sa) ; 
+    //mcleanup(sma) 
+  }
+
+  return smh, gids, ha, sa, clean
+
+  // Remote shard KV servers
+  // const IP = "127.0.0.1"
+  // ha := make([][]string, ngroups)
+  // gids := make([]int64, ngroups)
+  // for i := 0; i < ngroups; i++ {
+  //   gids[i] = int64(i + 100)
+  //   ha[i] = make([]string, nreplicas)
+  //   for j := 0; j < nreplicas; j++ {
+  //     ha[i][j] = IP + ":80" + strconv.Itoa(80 + i * ngroups + j + 3)
+  //   }
+  // }
+
+  // return smh, gids, ha, nil, clean
 }
 
 func TestBasic(t *testing.T) {
@@ -108,7 +114,6 @@ func TestBasic(t *testing.T) {
   mck.Join(gids[0], ha[0])
 
   ck := MakeClerk(smh)
-
   ck.Put("a", "x")
   v := ck.PutHash("a", "b")
   if v != "x" {
@@ -235,7 +240,7 @@ func TestLimp(t *testing.T) {
   }
 
   for g := 0; g < len(sa); g++ {
-    sa[g][rand.Int() % len(sa[g])].kill()
+    sa[g][rand.Int() % len(sa[g])].Kill()
   }
 
   keys := make([]string, 10)
@@ -266,7 +271,7 @@ func TestLimp(t *testing.T) {
     mck.Leave(gids[g])
     time.Sleep(2 * time.Second)
     for i := 0; i < len(sa[g]); i++ {
-      sa[g][i].kill()
+      sa[g][i].Kill()
     }
     for i := 0; i < len(keys); i++ {
       v := ck.Get(keys[i])

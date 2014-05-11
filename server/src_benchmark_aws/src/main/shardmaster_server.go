@@ -7,6 +7,7 @@ import "log"
 import "syscall"
 import "math/rand"
 import "flag"
+import "strconv"
 
 
 func main() {
@@ -15,9 +16,10 @@ func main() {
   flag.Parse()
   var smh[]string = make([]string, 3)
   const IP = "127.0.0.1:"
-  smh[0] = IP + "8080"
-  smh[0] = IP + "8081"
-  smh[0] = IP + "8082"
+  const nmasters = 3
+  for i := 0; i < nmasters; i++ {
+    smh[i] = IP + "808" + strconv.Itoa(i)
+  }
   sm, rpcs := shardmaster.SetupServer(smh, port)
   listener, e := net.Listen("tcp", smh[port]);
   if e != nil {

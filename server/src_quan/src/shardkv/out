@@ -1,0 +1,199 @@
+2014/05/10 12:17:13 method BalanceJoin has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceLeave has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceMove reply type not a pointer: int
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ExtendAndCopy has wrong number of ins: 5
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method ProposeOp has wrong number of ins: 5
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceJoin has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceLeave has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceMove reply type not a pointer: int
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ExtendAndCopy has wrong number of ins: 5
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method ProposeOp has wrong number of ins: 5
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceJoin has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceLeave has wrong number of ins: 2
+2014/05/10 12:17:13 method BalanceMove reply type not a pointer: int
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ExtendAndCopy has wrong number of ins: 5
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method ProposeOp has wrong number of ins: 5
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+2014/05/10 12:17:13 method Agreement has wrong number of ins: 2
+2014/05/10 12:17:13 method Catchup has wrong number of ins: 4
+2014/05/10 12:17:13 method ConfigDone reply type not a pointer: string
+2014/05/10 12:17:13 method FreeSnapshots has wrong number of ins: 1
+2014/05/10 12:17:13 method Reconfig has wrong number of ins: 4
+2014/05/10 12:17:13 method CurrentInstanceNum has wrong number of ins: 1
+2014/05/10 12:17:13 method Done has wrong number of ins: 2
+2014/05/10 12:17:13 method Kill has wrong number of ins: 1
+2014/05/10 12:17:13 method Max has wrong number of ins: 1
+2014/05/10 12:17:13 method MenciusBackgroundThread has wrong number of ins: 1
+2014/05/10 12:17:13 method Min has wrong number of ins: 1
+2014/05/10 12:17:13 method Start reply type not a pointer: interface {}
+2014/05/10 12:17:13 method Status has wrong number of ins: 2
+Test: Basic Join/Leave ...
+QUERY -1: Waiting for response for sequence number 1
+QUERY -1: Waiting for response for sequence number 1
+QUERY -1: Decided on op with sequence number 1
+QUERY 0: Catching up first
+QUERY 0: Finished catchup
+QUERY -1: Waiting for response for sequence number 3
+QUERY -1: Waiting for response for sequence number 3
+QUERY -1: Decided on op with sequence number 3
+QUERY 0: Catching up first
+QUERY 0: Finished catchup
+QUERY -1: Waiting for response for sequence number 6
+QUERY -1: Waiting for response for sequence number 6
+QUERY -1: Decided on op with sequence number 6
+QUERY 0: Catching up first
+QUERY 0: Finished catchup
+QUERY -1: Waiting for response for sequence number 7
+QUERY -1: Waiting for response for sequence number 7
+QUERY -1: Decided on op with sequence number 7
+QUERY 0: Catching up first
+QUERY 0: Finished catchup
+QUERY -1: Waiting for response for sequence number 8
+QUERY -1: Waiting for response for sequence number 8
+QUERY -1: No agreement on sequence number 8, catching up before trying again
+QUERY -1: No decision was made! Trying sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
+QUERY -1: Waiting for response for sequence number 18
