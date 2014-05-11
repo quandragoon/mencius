@@ -45,14 +45,18 @@ func cleanup(sa [][]*ShardKV) {
 func setup(tag string, unreliable bool) ([]string, []int64, [][]string, [][]*ShardKV, func()) {
   runtime.GOMAXPROCS(4)
   
-  const nmasters = 1
+  const nmasters = 3
   //var sma []*shardmaster.ShardMaster = make([]*shardmaster.ShardMaster, nmasters)
   var smh []string = make([]string, nmasters)
   // defer mcleanup(sma)
   // for i := 0; i < nmasters; i++ {
   //   smh[i] = port(tag+"m", i)
   // }
-  smh[0] = "54.187.210.114:8080"
+  //smh[0] = "54.187.210.114:8080"
+  // smh[0] = "127.0.0.1:8080"
+  for i := 0; i < nmasters; i++ {
+    smh[i] = "127.0.0.1:808" + strconv.Itoa(i)
+  }
   // for i := 0; i < nmasters; i++ {
   //   sma[i] = shardmaster.StartServer(smh, i)
   // }

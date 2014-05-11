@@ -464,12 +464,11 @@ func StartServer(servers []string, me int) *ShardMaster {
 
   rpcs := rpc.NewServer()
   rpcs.Register(sm)
-  rpcs.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
 
   sm.px = paxos.Make(servers, me, rpcs)
 
   os.Remove(servers[me])
-  l, e := net.Listen("tcp", servers[me]);
+  l, e := net.Listen("unix", servers[me]);
   if e != nil {
     log.Fatal("shardmaster listen error: ", e);
   }
@@ -480,7 +479,7 @@ func StartServer(servers []string, me int) *ShardMaster {
   // please do not change any of the following code,
   // or do anything to subvert it.
 
-  //go func() {
+  go func() {
     for sm.dead == false {
       conn, err := sm.l.Accept()
       if err == nil && sm.dead == false {
@@ -507,7 +506,46 @@ func StartServer(servers []string, me int) *ShardMaster {
         sm.Kill()
       }
     }
-  //}()
+  }()
 
   return sm
+}
+
+func (sm *ShardMaster) IsDead() bool {
+  return sm.dead
+}
+
+func (sm *ShardMaster) IsUnreliable() bool {
+  return sm.unreliable
+}
+
+//
+// servers[] contains the ports of the set of
+// servers that will cooperate via Paxos to
+// form the fault-tolerant shardmaster service.
+// me is the index of the current server in servers[].
+// 
+func SetupServer(servers []string, me int) (*ShardMaster, *rpc.Server) {
+  gob.Register(Op{})
+  gob.Register(QueryReply{})
+  gob.Register(JoinReply{})
+  gob.Register(LeaveReply{})
+  gob.Register(MoveReply{})
+
+  sm := new(ShardMaster)
+  sm.me = me
+
+  sm.configs = make([]Config, 1)
+  sm.configs[0].Groups = map[int64][]string{}
+
+  rpcs := rpc.NewServer()
+  rpcs.Register(sm)
+  //rpcs.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
+
+  sm.px = paxos.Make(servers, me, rpcs)
+
+  os.Remove(servers[me])
+  
+
+  return sm, rpcs
 }
