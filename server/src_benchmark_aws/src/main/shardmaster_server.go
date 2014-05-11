@@ -10,17 +10,20 @@ import "flag"
 
 
 func main() {
-  var port string
-  flag.StringVar(&port, "port", "8080", "port for server")
+  var port int
+  flag.IntVar(&port, "portindex", 0, "port for server")
   flag.Parse()
-  var smh[]string = make([]string, 1)
-  smh[0] = ":" + port
-  sm, rpcs := shardmaster.SetupServer(smh, 0)
-  listener, e := net.Listen("tcp", smh[0]);
+  var smh[]string = make([]string, 3)
+  const IP = "127.0.0.1:"
+  smh[0] = IP + "8080"
+  smh[0] = IP + "8081"
+  smh[0] = IP + "8082"
+  sm, rpcs := shardmaster.SetupServer(smh, port)
+  listener, e := net.Listen("tcp", smh[port]);
   if e != nil {
     log.Fatal("shardmaster listen error: ", e);
   }
-  fmt.Println("START SERVER: port " + port)
+  fmt.Printf("START SERVER: port %d\n", port)
 
   // please do not change any of the following code,
   // or do anything to subvert it.

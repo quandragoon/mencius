@@ -55,7 +55,7 @@ func setup(tag string, unreliable bool) ([]string, []int64, [][]string, [][]*Sha
   //smh[0] = "54.187.210.114:8080"
   // smh[0] = "127.0.0.1:8080"
   for i := 0; i < nmasters; i++ {
-    smh[i] = "127.0.0.1:808" + strconv.Itoa(i)
+    smh[i] = "54.187.210.114:808" + strconv.Itoa(i)
   }
   // for i := 0; i < nmasters; i++ {
   //   sma[i] = shardmaster.StartServer(smh, i)
@@ -65,25 +65,36 @@ func setup(tag string, unreliable bool) ([]string, []int64, [][]string, [][]*Sha
   const nreplicas = 3 // servers per group
   gids := make([]int64, ngroups)    // each group ID
   ha := make([][]string, ngroups)   // ShardKV ports, [group][replica]
-  sa := make([][]*ShardKV, ngroups) // ShardKVs
-  // defer cleanup(sa)
+  // sa := make([][]*ShardKV, ngroups) // ShardKVs
+  // // defer cleanup(sa)
+  // for i := 0; i < ngroups; i++ {
+  //   gids[i] = int64(i + 100)
+  //   sa[i] = make([]*ShardKV, nreplicas)
+  //   ha[i] = make([]string, nreplicas)
+  //   for j := 0; j < nreplicas; j++ {
+  //     ha[i][j] = port(tag+"s", (i*nreplicas)+j)
+  //   }
+  //   for j := 0; j < nreplicas; j++ {
+  //     sa[i][j] = StartServer(gids[i], smh, ha[i], j)
+  //     sa[i][j].unreliable = unreliable
+  //   }
+  // }
+
+  // clean := func() { cleanup(sa) ; 
+  //   //mcleanup(sma) 
+  // }
+  const IP = "127.0.0.1"
+  ha := make([][]string, ngroups)
+  gids := make([]int64, ngroups)
   for i := 0; i < ngroups; i++ {
     gids[i] = int64(i + 100)
-    sa[i] = make([]*ShardKV, nreplicas)
     ha[i] = make([]string, nreplicas)
     for j := 0; j < nreplicas; j++ {
-      ha[i][j] = port(tag+"s", (i*nreplicas)+j)
-    }
-    for j := 0; j < nreplicas; j++ {
-      sa[i][j] = StartServer(gids[i], smh, ha[i], j)
-      sa[i][j].unreliable = unreliable
+      ha[i][j] = IP + ":80" + strconv.Itoa(80 + i * ngroups + j + 3)
     }
   }
 
-  clean := func() { cleanup(sa) ; 
-    //mcleanup(sma) 
-  }
-  return smh, gids, ha, sa, clean
+  return smh, gids, ha, nil, clean
 }
 
 func TestBasic(t *testing.T) {

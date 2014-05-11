@@ -454,7 +454,7 @@ func (kv *ShardKV) tick() {
 
 
 // tell the server to shut itself down.
-func (kv *ShardKV) kill() {
+func (kv *ShardKV) Kill() {
   kv.dead = true
   kv.l.Close()
   kv.px.Kill()
@@ -535,7 +535,7 @@ func StartServer(gid int64, shardmasters []string,
       }
       if err != nil && kv.dead == false {
         fmt.Printf("ShardKV(%v) accept: %v\n", me, err.Error())
-        kv.kill()
+        kv.Kill()
       }
     }
   }()
@@ -548,4 +548,103 @@ func StartServer(gid int64, shardmasters []string,
   }()
 
   return kv
+}
+
+func (kv *ShardKV) IsDead() bool {
+  return kv.dead
+}
+
+func (kv *ShardKV) IsUnreliable() bool {
+  return kv.unreliable
+}
+//
+// Start a shardkv server.
+// gid is the ID of the server's replica group.
+// shardmasters[] contains the ports of the
+//   servers that implement the shardmaster.
+// servers[] contains the ports of the servers
+//   in this replica group.
+// Me is the index of this server in servers[].
+//
+func SetupServer(gid int64, shardmasters []string,
+                 servers []string, me int) (*ShardKV, *rpc.Server) {
+  gob.Register(Op{})
+  gob.Register(GetReply{})
+  gob.Register(PutReply{})
+  gob.Register(UpdateArgs{})
+  gob.Register(UpdateReply{})
+  gob.Register(RequestValue{})
+  gob.Register(DuplicateGet{})
+  gob.Register(DuplicatePut{})
+
+  kv := new(ShardKV)
+  kv.me = me
+  kv.gid = gid
+  kv.sm = shardmaster.MakeClerk(shardmasters)
+  kv.meString = servers[kv.me]
+
+  // Your initialization code here.
+  kv.keyvalues = make(map[int]map[string]RequestValue)
+  kv.keyvalues[0] = make(map[string]RequestValue)
+  kv.getRequests = make(map[int64]DuplicateGet)
+  kv.putRequests = make(map[int64]DuplicatePut)
+  kv.peersDone = make(map[string]int)
+  kv.peersDone[kv.meString] = 0
+  // Don't call Join().
+
+  rpcs := rpc.NewServer()
+  rpcs.Register(kv)
+
+  kv.px = paxos.Make(servers, me, rpcs)
+
+
+  os.Remove(servers[me])
+  // l, e := net.Listen("unix", servers[me]);
+  // if e != nil {
+  //   log.Fatal("listen error: ", e);
+  // }
+
+
+  // kv.l = l
+
+  // // please do not change any of the following code,
+  // // or do anything to subvert it.
+
+  // go func() {
+  //   for kv.dead == false {
+  //     conn, err := kv.l.Accept()
+  //     if err == nil && kv.dead == false {
+  //       if kv.unreliable && (rand.Int63() % 1000) < 100 {
+  //         // discard the request.
+  //         conn.Close()
+  //       } else if kv.unreliable && (rand.Int63() % 1000) < 200 {
+  //         // process the request but force discard of reply.
+  //         c1 := conn.(*net.UnixConn)
+  //         f, _ := c1.File()
+  //         err := syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
+  //         if err != nil {
+  //           fmt.Printf("shutdown: %v\n", err)
+  //         }
+  //         go rpcs.ServeConn(conn)
+  //       } else {
+  //         go rpcs.ServeConn(conn)
+  //       }
+  //     } else if err == nil {
+  //       conn.Close()
+  //     }
+  //     if err != nil && kv.dead == false {
+  //       fmt.Printf("ShardKV(%v) accept: %v\n", me, err.Error())
+  //       kv.kill()
+  //     }
+  //   }
+  // }()
+
+  go func() {
+    for kv.dead == false {
+      kv.tick()
+      time.Sleep(250 * time.Millisecond)
+    }
+  }()
+
+  return kv, rpcs
 }
