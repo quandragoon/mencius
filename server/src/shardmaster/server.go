@@ -96,20 +96,34 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
       decided, val := sm.px.Status(curSeqNum)
       // DPrintf("%s %d: Waiting for response for GID %d\n", opType, op.GID, op.GID)
       if decided {
-        val, ok := val.(Op)
-        fmt.Println(ok)
-        if ok && OpsAreEqual(val, op) {
+        // fmt.Println(val) 
+        // val, ok := val.(Op)
+        // fmt.Println(val)
+        // fmt.Println(ok)
+        // if ok && OpsAreEqual(val, op) {
+
+        val, _ := val.(Op)
+        if val.Type == "" {
+          val.Shard = -1
+        }
+
+        // fmt.Println(val) 
+        // fmt.Println(op)
+        // fmt.Println(OpsAreEqual(val, op))
+
+        if OpsAreEqual(val, op) {
           // Check if agreed on instance is this instance
           DPrintf("%s %d: Decided on op with sequence number %d\n", opType, op.GID, curSeqNum)
           return curSeqNum
         } else {
           // No agreement, have client try again
           // DPrintf("%s %d: No agreement on sequence number %d, catching up before trying again\n", opType, op.GID, curSeqNum)
-          curSeqNum = sm.px.Max() + 1
+          // curSeqNum = sm.px.Max() + 1
           // sm.Catchup(curSeqNum, opType, op.GID)
           op = Op{opType, op.GID, op.Shard, op.Servers}
           curSeqNum = sm.px.Start(curSeqNum, op)
           DPrintf("%s %d: No decision was made! Trying sequence number %d\n", opType, op.GID, curSeqNum)
+          time.Sleep(100*time.Millisecond)
           break
         }
       }
@@ -145,6 +159,7 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
       }
       curSeq++
     } else {
+      fmt.Println(curSeq, seqNum)
       if curSeq >= sm.px.Min() {
         DPrintf("%s %d: Sequence number %d not decided yet, waiting...\n", opType, GID, curSeq)
         noOp := Op{"", 0, -1, []string{}}
@@ -152,14 +167,17 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
         to := time.Millisecond
         for {
           decided, _ := sm.px.Status(curSeq)
+          fmt.Println(sm.px.Status(curSeq))
           if decided {
             break
           }
+          // curSeq++
           time.Sleep(to)
-          if to < 10 * time.Second {
+          if to < 10 * time.Millisecond {
             to *= 2
           }
         }
+        time.Sleep(100*time.Millisecond)
       } else {
         curSeq++
       }

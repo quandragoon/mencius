@@ -192,6 +192,7 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
 
+
   px.instancesMapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
     agreementInstance := px.makeNewAgreementInstance(args.InstanceNum)
@@ -240,7 +241,7 @@ func (px *Paxos) DecidedHandler(args *Decided, reply *DecidedOK) error {
 
   reply.DoneNum = px.doneNums[px.me]
 
-  
+
 
   // fmt.Println("decided")
   // fmt.Println("---------------")
@@ -417,6 +418,7 @@ func (px *Paxos) Start(seq int, v interface{}) int{
         // do a normal no-op
         // fmt.Println("propose in Start", px.me)
         go px.propose(currNum, Op{"", 0, -1, []string{}}) // change this to parameterize no-op
+
         currNum += 1
         totalWait = 0
       }
@@ -438,19 +440,19 @@ func (px *Paxos) Start(seq int, v interface{}) int{
 
 func (px *Paxos) MenciusBackgroundThread() {
   for !px.dead {
+    // fmt.Println("Current Instance Number: ", px.currentInstanceNum)
     px.instanceNumMu.Lock()
-    // fmt.Println("CHECK1", px.me)
+
     if px.currentInstanceNum % px.menciusNumWorkers == px.me &&
        !px.hasIncomingOp{
-        // fmt.Println("CHECK2", px.me)
+
       // do a skip
       go px.proposeDecidedPhase(px.currentInstanceNum, Op{"", 0, -1, []string{}}) // parameterize no-op
       px.currentInstanceNum += 1
       px.instanceNumMu.Unlock()
     } else {
       px.instanceNumMu.Unlock()
-      time.Sleep(10 * time.Millisecond)
-      // fmt.Println("CHECK3", px.me)
+      time.Sleep(100 * time.Millisecond)
     }
   }
 }
@@ -535,7 +537,7 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
     // fmt.Println("NOT HOLE")
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
-    fmt.Println("HOLE")
+    // fmt.Println("HOLE")
     return false, nil
   }
 }
