@@ -115,6 +115,15 @@ type NoOp struct {
   Name string
 }
 
+
+
+func mod (x int, y int) int {
+  if x == -1 {
+    return y - 1
+  }
+  return x % y
+}
+
 //
 // call() sends an RPC to the rpcname handler on server srv
 // with arguments args, waits for the reply, and leaves the
@@ -161,10 +170,11 @@ func (px *Paxos) makeNewAgreementInstance(instanceNum int) AgreementInstance {
 }
 
 func (px *Paxos) PrepareHandler(args *Prepare, reply *PrepareOK) error {
+  // fmt.Println("PrepareHandler in ", px.me, args.InstanceNum)
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  // fmt.Println("PrepareHandler in ", px.me)
+
   px.instancesMapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
     agreementInstance := px.makeNewAgreementInstance(args.InstanceNum)
@@ -191,7 +201,6 @@ func (px *Paxos) PrepareHandler(args *Prepare, reply *PrepareOK) error {
 func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
-
 
   px.instancesMapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
@@ -283,7 +292,9 @@ func (px *Paxos) propose(seq int, v interface{}) {
       if index == px.me {
         px.PrepareHandler(&prepareMsg, &prepareReply)
       } else {
+        // fmt.Println("SENDING TO: ", peer, px.peers)
         call(peer, "Paxos.PrepareHandler", prepareMsg, &prepareReply)
+        // fmt.Println("Call ok: ", ok, peer)
       }
 
       prepareReplies[index] = prepareReply
@@ -305,7 +316,6 @@ func (px *Paxos) propose(seq int, v interface{}) {
     }
 
     // Accept phase
-    // fmt.Println(prepareOKCount, majority)
     if prepareOKCount >= majority {
       acceptValue := v
 
@@ -345,6 +355,7 @@ func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue i
     }
   }
 
+
   // Decided phase
   if num_accepted >= majority {
     decided = true
@@ -373,6 +384,27 @@ func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}) {
   }
 }
 
+
+
+
+func (px *Paxos) ProposeSeq (seq int, v interface{}) {
+  px.mu.Lock()
+  defer px.mu.Unlock()
+
+  if px.Min() <= seq{
+    agreed, _ := px.Status(seq)
+    if agreed{
+      return
+    }
+    go px.propose(seq, v)
+  }
+
+  return
+} 
+
+
+
+
 //
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
@@ -399,7 +431,7 @@ func (px *Paxos) Start(seq int, v interface{}) int{
 
   currNum := px.currentInstanceNum
 
-  for currNum % px.menciusNumWorkers != px.me {
+  for mod(currNum, px.menciusNumWorkers) != px.me {
     px.instancesMapMu.Lock()
     if _, exist := px.instances[currNum]; !exist {
       agreementInstance := px.makeNewAgreementInstance(currNum)
@@ -442,8 +474,8 @@ func (px *Paxos) MenciusBackgroundThread() {
   for !px.dead {
     // fmt.Println("Current Instance Number: ", px.currentInstanceNum)
     px.instanceNumMu.Lock()
-
-    if px.currentInstanceNum % px.menciusNumWorkers == px.me &&
+    // fmt.Println("Background: ", px.instances[1])
+    if mod(px.currentInstanceNum, px.menciusNumWorkers) == px.me &&
        !px.hasIncomingOp{
 
       // do a skip
@@ -534,10 +566,12 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
   px.instancesMapMu.Lock()
   defer px.instancesMapMu.Unlock()
   if agreementInstance, ok := px.instances[seq]; ok {
-    // fmt.Println("NOT HOLE")
+    // fmt.Println("NOT HOLE", px.instances[seq])
+    // if (!agreementInstance.Decided) {
+    //   go px.propose(seq, Op{"", 0, -1, []string{}})
+    // }
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
-    // fmt.Println("HOLE")
     return false, nil
   }
 }

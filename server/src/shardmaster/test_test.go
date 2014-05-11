@@ -353,6 +353,7 @@ func TestFreshQuery(t *testing.T) {
 
   fmt.Printf("Test: Query() returns latest configuration ...\n")
 
+  fmt.Println("ORIGINAL LIST OF SERVERS", kvh)
   portx := kvh[0] + strconv.Itoa(rand.Int())
   if os.Rename(kvh[0], portx) != nil {
     t.Fatalf("os.Rename() failed")
