@@ -64,7 +64,6 @@ func OpsAreEqual(op1 Op, op2 Op) bool {
       same = same && (v == op2.Servers[i])
     }
   }
-
   return same
 }
 
@@ -98,6 +97,7 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
       // DPrintf("%s %d: Waiting for response for GID %d\n", opType, op.GID, op.GID)
       if decided {
         val, ok := val.(Op)
+        fmt.Println(ok)
         if ok && OpsAreEqual(val, op) {
           // Check if agreed on instance is this instance
           DPrintf("%s %d: Decided on op with sequence number %d\n", opType, op.GID, curSeqNum)

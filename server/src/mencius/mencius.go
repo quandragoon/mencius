@@ -43,11 +43,26 @@ type Paxos struct {
   instances map[int]*AgreementInstance
   instancesMapMu sync.Mutex
 
+  instanceNumMu sync.Mutex
+
   doneNums []int // array representing each peer's doneNum
   currentInstanceNum int
   menciusNumWorkers int
   hasIncomingOp bool
 }
+
+
+type Type string
+
+type Op struct {
+  // Your data here.
+  Type Type
+  GID int64
+  //Num int
+  Shard int
+  Servers []string
+}
+
 
 type AgreementInstance struct {
   InstanceNum int
@@ -214,12 +229,18 @@ func (px *Paxos) DecidedHandler(args *Decided, reply *DecidedOK) error {
   agreementInstance := px.instances[args.InstanceNum]
   px.instancesMapMu.Unlock()
 
+  px.instanceNumMu.Lock() 
+  if px.currentInstanceNum < args.InstanceNum + 1 {
+    px.currentInstanceNum = args.InstanceNum + 1
+  }
+  px.instanceNumMu.Unlock()
 
-  px.currentInstanceNum += 1
   agreementInstance.Decided = true
   agreementInstance.DecidedVal = args.Val_Decided
 
   reply.DoneNum = px.doneNums[px.me]
+
+  
 
   // fmt.Println("decided")
   // fmt.Println("---------------")
@@ -375,16 +396,18 @@ func (px *Paxos) Start(seq int, v interface{}) int{
   totalWait := 0
   px.hasIncomingOp = true
 
-  for px.currentInstanceNum % px.menciusNumWorkers != px.me {
+  currNum := px.currentInstanceNum
+
+  for currNum % px.menciusNumWorkers != px.me {
     px.instancesMapMu.Lock()
-    if _, exist := px.instances[px.currentInstanceNum]; !exist {
-      agreementInstance := px.makeNewAgreementInstance(px.currentInstanceNum)
-      px.instances[px.currentInstanceNum] = &agreementInstance
+    if _, exist := px.instances[currNum]; !exist {
+      agreementInstance := px.makeNewAgreementInstance(currNum)
+      px.instances[currNum] = &agreementInstance
     }
     px.instancesMapMu.Unlock()
 
-    if px.instances[px.currentInstanceNum].Decided {
-      px.currentInstanceNum += 1
+    if px.instances[currNum].Decided {
+      currNum += 1
       totalWait = 0
     } else {
       time.Sleep(time.Duration(sleepTime) * time.Millisecond)
@@ -393,29 +416,39 @@ func (px *Paxos) Start(seq int, v interface{}) int{
       if totalWait >= deadServerTimeout {
         // do a normal no-op
         // fmt.Println("propose in Start", px.me)
-        go px.propose(px.currentInstanceNum, NoOp{}) // change this to parameterize no-op
-        px.currentInstanceNum += 1
+        go px.propose(currNum, Op{"", 0, -1, []string{}}) // change this to parameterize no-op
+        currNum += 1
         totalWait = 0
       }
     }
   }
 
-  go px.proposeAcceptPhase(px.currentInstanceNum, px.generateProposalNumber(), v)
+  go px.proposeAcceptPhase(currNum, px.generateProposalNumber(), v)
   px.hasIncomingOp = false
 
-  return px.currentInstanceNum
+  px.instanceNumMu.Lock()
+  if px.currentInstanceNum < currNum{
+    px.currentInstanceNum = currNum
+  }
+  currNum = px.currentInstanceNum
+  px.instanceNumMu.Unlock()
+
+  return currNum
 }
 
 func (px *Paxos) MenciusBackgroundThread() {
   for !px.dead {
+    px.instanceNumMu.Lock()
     // fmt.Println("CHECK1", px.me)
     if px.currentInstanceNum % px.menciusNumWorkers == px.me &&
        !px.hasIncomingOp{
         // fmt.Println("CHECK2", px.me)
       // do a skip
-      go px.proposeDecidedPhase(px.currentInstanceNum, NoOp{}) // parameterize no-op
+      go px.proposeDecidedPhase(px.currentInstanceNum, Op{"", 0, -1, []string{}}) // parameterize no-op
       px.currentInstanceNum += 1
+      px.instanceNumMu.Unlock()
     } else {
+      px.instanceNumMu.Unlock()
       time.Sleep(10 * time.Millisecond)
       // fmt.Println("CHECK3", px.me)
     }
@@ -499,8 +532,10 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
   px.instancesMapMu.Lock()
   defer px.instancesMapMu.Unlock()
   if agreementInstance, ok := px.instances[seq]; ok {
+    // fmt.Println("NOT HOLE")
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
+    fmt.Println("HOLE")
     return false, nil
   }
 }
@@ -535,11 +570,12 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
   }
 
   px.instances = make(map[int]*AgreementInstance)
-  px.currentInstanceNum = 0
+  px.currentInstanceNum = -1
   px.menciusNumWorkers = len(peers)
   px.hasIncomingOp = false
 
   gob.Register(NoOp{})
+  gob.Register(Op{})
 
   go px.MenciusBackgroundThread()
   
