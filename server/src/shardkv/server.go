@@ -15,6 +15,7 @@ import "math"
 import "shardmaster"
 import "strconv"
 import "reflect"
+import "container/list"
 
 const Debug=0
 
@@ -52,6 +53,7 @@ type RequestValue struct {
   RequestTime time.Time
   SeqNum int
   ConfigNum int
+  Key string
 }
 
 
@@ -75,6 +77,13 @@ type ShardKV struct {
   getRequests map[int64]DuplicateGet
   config shardmaster.Config
   peersDone map[string]int
+  writeBuffer *list.List
+  writeBufLock sync.Mutex
+  lru *list.List
+  lruCache map[string]*list.Element
+  LRU_SIZE int
+  lruLock sync.Mutex
+  diskLock sync.Mutex
 }
 
 func (kv *ShardKV) Agreement(op Op) int {
@@ -149,14 +158,19 @@ func (kv *ShardKV) ConfigDone(num int, server string) {
 func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
   newConfig := kv.sm.Query(idx)
   if newConfig.Num > kv.config.Num {
+	kv.writeStateToDisk()
+//	kv.lruFlushCache()
     DPrintf("[%s %d %d] Starting reconfiguration %d\n", opType, kv.gid, kv.me, newConfig.Num)
     updates := make(map[int]*UpdateArgs)
     if kv.keyvalues[idx] == nil {
       kv.keyvalues[idx] = make(map[string]RequestValue)
     }
     keyvalues := ""
-    for k, v := range(kv.keyvalues[idx-1]) {
-      kv.keyvalues[idx][k] = v
+	keyValuesFromDisk, _ := kv.diskIO.export(idx-1)
+    //for k, v := range(kv.keyvalues[idx-1]) {
+    for k, v := range(keyValuesFromDisk) {
+	  kv.writeToKeyValues(idx, k, v)
+     // kv.keyvalues[idx][k] = v
       keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
     }
     DPrintf("[%s %d %d] Keyvalues before reconfiguration for config %d: %s\n", opType, kv.gid, kv.me, idx, keyvalues)
@@ -194,7 +208,9 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
           requestOk = call(server, "ShardKV.Update", update, &reply)
           if requestOk && reply.Err == OK {
             for k, v := range(reply.KeyValues) {
-              kv.keyvalues[idx][k] = RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum}
+			  rv := RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum, k}
+			  kv.writeToKeyValues(idx, k, rv)
+//              kv.keyvalues[idx][k] = RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum, k}
             }
 
             for id, request := range(reply.ClientPut) {
@@ -229,10 +245,10 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
       keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
     }
     DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
-//	fmt.Printf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
     kv.config = newConfig // Not sure about this
 //	fmt.Println(opType, " Writing reconfig to disk: ",kv.me," conf:",newConfig.Num)
-	kv.diskIO.writeMap(idx, kv.keyvalues[idx])
+//	kv.diskIO.writeKVMap(idx, kv.keyvalues[idx])
+//	kv.writeStateToDisk()
     kv.FreeSnapshots()
   }
 }
@@ -244,13 +260,15 @@ func (kv *ShardKV) Catchup(seqNum int, opType Type, reconfig bool) {
     decided, val := kv.px.Status(curSeq)
     if decided {
       if val.(Op).OpType == PUT {
-        dbVal, dbOk := kv.keyvalues[kv.config.Num][val.(Op).Key]
+		dbVal, dbOk := kv.readFromKeyValues(kv.config.Num, val.(Op).Key)
+        //dbVal, dbOk := kv.keyvalues[kv.config.Num][val.(Op).Key]
         newval := ""
         previousVal := ""
         if val.(Op).DoHash {
-          curVal, ok := kv.keyvalues[kv.config.Num][val.(Op).Key]
+          curVal, ok := kv.readFromKeyValues(kv.config.Num, val.(Op).Key)
+          //curVal, ok := kv.keyvalues[kv.config.Num][val.(Op).Key]
           if !ok {
-            curVal = RequestValue{"", 0, time.Now(), 0, 0}
+            curVal = RequestValue{"", 0, time.Now(), 0, 0, ""}
           }
           previousVal = curVal.Value
           newval = strconv.Itoa(int(hash(curVal.Value + val.(Op).Value)))
@@ -264,12 +282,16 @@ func (kv *ShardKV) Catchup(seqNum int, opType Type, reconfig bool) {
             if kv.keyvalues[kv.config.Num] == nil {
               kv.keyvalues[kv.config.Num] = make(map[string]RequestValue)
             }
-            kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num}
+			rv := RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
+			kv.writeToKeyValues(kv.config.Num, val.(Op).Key, rv)
+            //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
             kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
         } else if dbVal.ConfigNum <= kv.config.Num && dbVal.SeqNum < curSeq {
           if dbVal.RequestTime.Before(val.(Op).RequestTime) { // At most once guarantee
             DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for config with previous value %s for client %d\n", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, previousVal, val.(Op).ClientID)
-            kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num}
+			rv := RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num, val.(Op).Key}
+			kv.writeToKeyValues(kv.config.Num, val.(Op).Key, rv)
+            //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num, val.(Op).Key}
             kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
           } else {
             DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered but not executed for config with previous value %s for client %d\n", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, previousVal, val.(Op).ClientID)
@@ -319,18 +341,18 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
       seqNum := kv.Agreement(getOp)
       kv.Catchup(seqNum, GET, true)
       if kv.config.Shards[key2shard(args.Key)] == kv.gid {
-        testval, _ := kv.keyvalues[kv.config.Num][args.Key]
-		val, e := kv.diskIO.readValue(kv.config.Num, args.Key)
-        if e != nil {
+        //testval, _ := kv.keyvalues[kv.config.Num][args.Key]
+		val, ok := kv.readFromKeyValues(kv.config.Num, args.Key)
+//		testval, _ := kv.diskIO.readValue(kv.config.Num, args.Key)
+        if !ok {
           reply.Err = ErrNoKey
         } else {
           reply.Err = OK
           reply.Value = val.Value
-		  if (val.Value != testval.Value) {
+//		  if (val.Value != testval.Value) {
 //		 	fmt.Println("Check get! ", kv.config.Num, " key: ", args.Key, " memval: ", val.Value, " diskval: ",testval.Value)
-		  }
+//		  }
           DPrintf("%d [GET %s, %d | %d %d] %d: Returning %s for key %s\n", kv.config.Num, args.Key, key2shard(args.Key),kv.gid, kv.me, args.ClientID, val.Value, args.Key)
-          fmt.Printf("%d [GET %s, %d | %d %d] %d: Returning %s for key %s\n", kv.config.Num, args.Key, key2shard(args.Key),kv.gid, kv.me, args.ClientID, val.Value, args.Key)
         }
         kv.px.Done(seqNum)
       } else {
@@ -360,9 +382,10 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
       if kv.config.Shards[key2shard(args.Key)] == kv.gid {
         newval := ""
         if args.DoHash {
-          curVal, ok := kv.keyvalues[kv.config.Num][args.Key]
+          curVal, ok := kv.readFromKeyValues(kv.config.Num, args.Key)
+          //curVal, ok := kv.keyvalues[kv.config.Num][args.Key]
           if !ok {
-            curVal = RequestValue{"", 0, time.Now(), 0, 0}
+            curVal = RequestValue{"", 0, time.Now(), 0, 0, ""}
           }
           reply.PreviousValue = curVal.Value
           newval = strconv.Itoa(int(hash(curVal.Value + args.Value)))
@@ -370,16 +393,19 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
           newval = args.Value
         }
 
-        dbVal, dbOk := kv.keyvalues[kv.config.Num][args.Key]
+        dbVal, dbOk := kv.readFromKeyValues(kv.config.Num, args.Key)
+        //dbVal, dbOk := kv.keyvalues[kv.config.Num][args.Key]
         if !dbOk || dbVal.ConfigNum != kv.config.Num || (dbVal.SeqNum < seqNum && dbVal.RequestTime != args.RequestTime) {
           // Make sure at once
-          kv.keyvalues[kv.config.Num][args.Key] = RequestValue{newval, args.ClientID, args.RequestTime, seqNum, kv.config.Num}
+		  rv := RequestValue{newval, args.ClientID, args.RequestTime, seqNum, kv.config.Num, args.Key}
+		  kv.writeToKeyValues(kv.config.Num, args.Key, rv)
+          //kv.keyvalues[kv.config.Num][args.Key] = RequestValue{newval, args.ClientID, args.RequestTime, seqNum, kv.config.Num, args.Key}
           kv.putRequests[args.ClientID] = DuplicatePut{args.RequestTime, reply.PreviousValue}
 //		  fmt.Println("Writing to disk: ",kv.config.Num," key: ",args.Key," val: ", newval)
-		  err := kv.diskIO.writeEncode(kv.config.Num, args.Key, kv.keyvalues[kv.config.Num][args.Key])
-		  if err != nil {
-			fmt.Println("Could not write ", kv.config.Num, " key: ",args.Key, "err: ",err.Error())
-		  }
+//		  err := kv.diskIO.writeEncode(kv.config.Num, args.Key, rv)
+//		  if err != nil {
+//			fmt.Println("Could not write ", kv.config.Num, " key: ",args.Key, "err: ",err.Error())
+//		  }
         } else {
           // Otherwise send back the previous previous-value
           reply.PreviousValue = kv.putRequests[args.ClientID].PreviousValue
@@ -400,10 +426,13 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
+//  kv.mu.Lock()
+//  defer kv.mu.Unlock()
+  kv.writeStateToDisk()
   for {
     kv.Catchup(kv.px.Max() + 1, UPDATE, true)
 
-    if args.Num <= kv.config.Num {
+    if args.Num < kv.config.Num {
       keyvalues := make(map[string]RequestValue)
       keysSent := ""
       keys := ""
@@ -411,9 +440,16 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
         keys += k + ": " + v.Value + "; Shard" + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
       }
       DPrintf("%d [UPDATE %d %d] Key values for server %d from group %d: %s\n", args.Num, kv.gid, kv.me, args.Server, args.Group, keys)
-      for k, v := range(kv.keyvalues[args.Num]) { // What if not caught up?
+	  kv.diskLock.Lock()
+	  keyvaluesOnDisk,_  := kv.diskIO.export(args.Num)
+	  kv.diskLock.Unlock()
+      //for k, v := range(kv.keyvalues[args.Num]) { // What if not caught up?
+      for k, v := range(keyvaluesOnDisk) { // What if not caught up?
         if key2shard(k) == args.Shard {
           keyvalues[k] = v
+//		  if keyvaluesOnDisk[k].Value != kv.keyvalues[args.Num][k].Value {
+//			fmt.Println(args.Num,"Update MISMATCH for ",k," mem: ",kv.keyvalues[args.Num][k].Value," disk: ",keyvaluesOnDisk[k].Value)
+//		  }
           keysSent += k + ": " + v.Value + ", "
         }
       }
@@ -465,11 +501,154 @@ func (kv *ShardKV) tick() {
     }
     kv.mu.Unlock()
   }
+  kv.writeStateToDisk()
+}
+
+func (kv *ShardKV) writeToKeyValues(configNum int, key string, rv RequestValue) {
+  kv.diskLock.Lock()
+  defer kv.diskLock.Unlock()
+
+  kv.keyvalues[configNum][key] = rv
+  rv.ConfigNum = configNum
+  kv.lruPut(key, rv)
+//  fmt.Println("pushing to buffer: c: ",configNum,"k: ",key,"v:",rv.Value)
+  kv.writeBuffer.PushBack(rv)
+}
+
+func (kv *ShardKV) readFromKeyValues(configNum int, key string) (RequestValue, bool) {
+    kv.diskLock.Lock()
+    defer kv.diskLock.Unlock()
+
+//    val, OK := kv.keyvalues[configNum][key]
+    val, OK := kv.lruGet(key)
+
+//	if val.Value != memval.Value {
+//		fmt.Println(kv.gid,"lru differs from mem, c: ",configNum," k:",key,"v:",memval.Value,"lruv:",val.Value)
+//	}
+   // val, OK = kv.lruGet(key)
+
+	if !OK || val.ConfigNum != configNum {
+		OK = false
+		//If cannot read from memory, try reading from disk
+//		fmt.Println(kv.gid,"Try from disk c: ",configNum," k:",key)
+		diskval, err := kv.diskIO.readValue(configNum, key)
+		if err == nil {
+			OK = true
+			val = diskval
+		}
+	}
+
+	return val, OK
+}
+
+//
+// Load any saved state from disk
+//
+func (kv *ShardKV) loadStateFromDisk() {
+  kv.diskLock.Lock()
+  defer kv.diskLock.Unlock()
+
+  //keyvalues
+  latestConfigNum, _ := kv.diskIO.latestConfigNum()
+
+  //putRequests map[int64]DuplicatePut
+  savedPutState,err := kv.diskIO.readPutState(latestConfigNum)
+  if err != nil {
+	  return
+  }
+  savedGetState,err := kv.diskIO.readGetState(latestConfigNum)
+  if err != nil {
+	  return
+  }
+  savedConfigState,err := kv.diskIO.readConfigState(latestConfigNum)
+  if err != nil {
+	  return
+  }
+  savedPeersState,err := kv.diskIO.readPeersState(latestConfigNum)
+
+  if err != nil {
+	kv.putRequests = savedPutState
+	kv.getRequests = savedGetState
+	kv.config = savedConfigState
+	kv.peersDone = savedPeersState
+  }
+
+  // paxos
+
+}
+
+//
+// Write state to disk
+//
+func (kv *ShardKV) writeStateToDisk() {
+  kv.diskLock.Lock()
+  defer kv.diskLock.Unlock()
+
+  // Paxos state
+
+  // Shardkv state
+  kv.diskIO.writeEncode(kv.config.Num, "putRequestState", kv.putRequests)
+  kv.diskIO.writeEncode(kv.config.Num, "getRequestState", kv.getRequests)
+  kv.diskIO.writeEncode(kv.config.Num, "configState", kv.config)
+  kv.diskIO.writeEncode(kv.config.Num, "peersDoneState", kv.peersDone)
+
+  // Flush write buffer
+  for e := kv.writeBuffer.Front(); e != nil; e = e.Next() {
+	  rv := e.Value.(RequestValue)
+//  	fmt.Println(kv.gid,"Writing to disk from buffer c: ",rv.ConfigNum,"key:",rv.Key,"val:",rv.Value)
+	err := kv.diskIO.writeEncode(rv.ConfigNum, rv.Key, rv)
+	  if err != nil {
+		fmt.Println("could not write to buffer",err.Error())
+	  }
+//  	fmt.Println(kv.gid,"Wrote to disk from buffer c: ",rv.ConfigNum,"key:",rv.Key,"val:",rv.Value)
+  }
+
+  kv.writeBuffer = list.New()
+}
+
+func (kv *ShardKV) lruGet(key string) (RequestValue, bool) {
+	kv.lruLock.Lock()
+	defer kv.lruLock.Unlock()
+
+	val, ok := kv.lruCache[key]
+	if !ok {
+		return RequestValue{}, false
+	}
+	kv.lru.MoveToBack(val)
+	return val.Value.(RequestValue), true
+}
+
+func (kv *ShardKV) lruPut(key string, rv RequestValue) {
+	kv.lruLock.Lock()
+	defer kv.lruLock.Unlock()
+
+	prevval, exists := kv.lruCache[key]
+	if exists {
+		kv.lru.Remove(prevval)
+	}
+
+	e := kv.lru.PushBack(rv)
+	kv.lruCache[key] = e
+
+	if kv.lru.Len() > kv.LRU_SIZE {
+		front := kv.lru.Front()
+		removedVal := kv.lru.Remove(front)
+		delete(kv.lruCache, removedVal.(RequestValue).Key)
+	}
 }
 
 
+func (kv *ShardKV) lruFlushCache() {
+	kv.lruLock.Lock()
+	defer kv.lruLock.Unlock()
+
+	kv.lru = kv.lru.Init()
+	kv.lruCache = make(map[string]*list.Element)
+}
+
 // tell the server to shut itself down.
 func (kv *ShardKV) kill() {
+//  kv.diskIO.cleanState()
   kv.dead = true
   kv.l.Close()
   kv.px.Kill()
@@ -502,7 +681,8 @@ func StartServer(gid int64, shardmasters []string,
   kv.meString = servers[kv.me]
 
   // Your initialization code here.
-  kv.diskIO.BasePath = "/tmp/Data"
+  t := time.Now().Local()
+  kv.diskIO.BasePath = "/tmp/Data/" + t.Format("20060102150405")
   kv.diskIO.me = strconv.FormatInt(gid,10)
 
   kv.keyvalues = make(map[int]map[string]RequestValue)
@@ -511,7 +691,14 @@ func StartServer(gid int64, shardmasters []string,
   kv.putRequests = make(map[int64]DuplicatePut)
   kv.peersDone = make(map[string]int)
   kv.peersDone[kv.meString] = 0
+
+  kv.writeBuffer = list.New()
+  kv.lru = list.New()
+  kv.lruCache = make(map[string]*list.Element)
+  kv.LRU_SIZE = 20
   // Don't call Join().
+
+  kv.loadStateFromDisk()
 
   rpcs := rpc.NewServer()
   rpcs.Register(kv)
