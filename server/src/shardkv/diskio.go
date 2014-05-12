@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"mencius"
 	"sync"
 	"strconv"
 	"strings"
@@ -96,11 +97,11 @@ func (d *DiskIO) writeEncode(config int, key string, valToWrite interface{}) err
 
 }
 
-func (d *DiskIO) readPaxosState(config int) (MetaData, error) {
+func (d *DiskIO) readPaxosState(config int) (paxos.PaxosState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	val := MetaData{}
+	val := paxos.PaxosState{}
 
 	path := d.BasePath + "/" + d.me + "_" + strconv.Itoa(config) + "/paxosState"
 

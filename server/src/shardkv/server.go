@@ -569,12 +569,17 @@ func (kv *ShardKV) loadStateFromDisk() {
 	  return
   }
   savedPeersState,err := kv.diskIO.readPeersState(latestConfigNum)
+  if err != nil {
+	  return
+  }
+//  savedPaxosState,err := kv.diskIO.readPaxosState(latestConfigNum)
 
   if err != nil {
 	kv.putRequests = savedPutState
 	kv.getRequests = savedGetState
 	kv.config = savedConfigState
 	kv.peersDone = savedPeersState
+//	kv.px.state = savedPaxosState
   }
 
   // paxos
@@ -589,6 +594,7 @@ func (kv *ShardKV) writeStateToDisk() {
   defer kv.diskLock.Unlock()
 
   // Paxos state
+//  kv.diskIO.writeEncode(kv.config.Num, "paxosState", kv.px.state)
 
   // Shardkv state
   kv.diskIO.writeEncode(kv.config.Num, "putRequestState", kv.putRequests)
