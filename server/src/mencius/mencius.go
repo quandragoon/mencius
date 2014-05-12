@@ -40,12 +40,17 @@ type Paxos struct {
   rpcCount int
   peers []string
   me int // index into peers[]
-  instances map[int]*AgreementInstance
   mapMu sync.Mutex
 
+  state PaxosState
+
+}
+
+type PaxosState struct {
   doneNums []int // array representing each peer's doneNum
   nextInstanceNum int
   menciusNumWorkers int
+  instances map[int]*AgreementInstance
 }
 
 type AgreementInstance struct {
@@ -142,12 +147,12 @@ func (px *Paxos) PrepareHandler(args *Prepare, reply *PrepareOK) error {
   defer px.mu.Unlock()
 
   px.mapMu.Lock()
-  if _, exist := px.instances[args.InstanceNum]; !exist {
+  if _, exist := px.state.instances[args.InstanceNum]; !exist {
     agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
-    px.instances[args.InstanceNum] = &agreementInstance
+    px.state.instances[args.InstanceNum] = &agreementInstance
   }
 
-  agreementInstance := px.instances[args.InstanceNum]
+  agreementInstance := px.state.instances[args.InstanceNum]
   px.mapMu.Unlock()
   if args.ProposalNum > agreementInstance.N_Prepare {
     agreementInstance.N_Prepare = args.ProposalNum
@@ -158,7 +163,7 @@ func (px *Paxos) PrepareHandler(args *Prepare, reply *PrepareOK) error {
     reply.OK = "reject"
   }
 
-  reply.DoneNum = px.doneNums[px.me]
+  reply.DoneNum = px.state.doneNums[px.me]
 
   return nil
 }
@@ -168,13 +173,13 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   defer px.mu.Unlock()
 
   px.mapMu.Lock()
-  if _, exist := px.instances[args.InstanceNum]; !exist {
+  if _, exist := px.state.instances[args.InstanceNum]; !exist {
     agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
-    px.instances[args.InstanceNum] = &agreementInstance
+    px.state.instances[args.InstanceNum] = &agreementInstance
   }
 
 
-  agreementInstance := px.instances[args.InstanceNum]
+  agreementInstance := px.state.instances[args.InstanceNum]
   px.mapMu.Unlock()
   if args.ProposalNum >= agreementInstance.N_Prepare {
     agreementInstance.N_Prepare = args.ProposalNum
@@ -187,13 +192,13 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   }
 
   if args.IsSuggest {
-    for px.nextInstanceNum <= args.InstanceNum {
-      // fmt.Println(px.nextInstanceNum)
-      go px.proposeAcceptPhase(px.nextInstanceNum, px.generateProposalNumber(), NoOp{}, false, true)
-      px.nextInstanceNum += px.menciusNumWorkers
+    for px.state.nextInstanceNum <= args.InstanceNum {
+      // fmt.Println(px.state.nextInstanceNum)
+      go px.proposeAcceptPhase(px.state.nextInstanceNum, px.generateProposalNumber(), NoOp{}, false, true)
+      px.state.nextInstanceNum += px.state.menciusNumWorkers
     }
   }
-  reply.DoneNum = px.doneNums[px.me]
+  reply.DoneNum = px.state.doneNums[px.me]
 
   return nil
 }
@@ -203,19 +208,19 @@ func (px *Paxos) DecidedHandler(args *Decided, reply *DecidedOK) error {
   defer px.mu.Unlock()
 
   px.mapMu.Lock()
-  if _, exist := px.instances[args.InstanceNum]; !exist {
+  if _, exist := px.state.instances[args.InstanceNum]; !exist {
     agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
-    px.instances[args.InstanceNum] = &agreementInstance
+    px.state.instances[args.InstanceNum] = &agreementInstance
   }
 
-  agreementInstance := px.instances[args.InstanceNum]
+  agreementInstance := px.state.instances[args.InstanceNum]
   px.mapMu.Unlock()
 
 
   agreementInstance.Decided = true
   agreementInstance.DecidedVal = args.Val_Decided
 
-  reply.DoneNum = px.doneNums[px.me]
+  reply.DoneNum = px.state.doneNums[px.me]
 
   return nil
 }
@@ -225,8 +230,8 @@ func (px *Paxos) generateProposalNumber() int64 {
 }
 
 func (px *Paxos) updateDoneNum(peerNum int, newDoneNum int) {
-  if newDoneNum > px.doneNums[peerNum] {
-    px.doneNums[peerNum] = newDoneNum
+  if newDoneNum > px.state.doneNums[peerNum] {
+    px.state.doneNums[peerNum] = newDoneNum
   }
 }
 
@@ -349,14 +354,14 @@ func (px *Paxos) Start(seq int, v interface{}) int {
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  seq = px.nextInstanceNum
-  px.nextInstanceNum += px.menciusNumWorkers
+  seq = px.state.nextInstanceNum
+  px.state.nextInstanceNum += px.state.menciusNumWorkers
 
 
   px.mapMu.Lock()
-  if _, exist := px.instances[seq]; !exist {
+  if _, exist := px.state.instances[seq]; !exist {
     agreementInstance := AgreementInstance{seq, false, -1, -1, nil, nil}
-    px.instances[seq] = &agreementInstance
+    px.state.instances[seq] = &agreementInstance
   }
   px.mapMu.Unlock()
 
@@ -382,7 +387,7 @@ func (px *Paxos) Done(seq int) {
 //
 func (px *Paxos) Max() int {
   max := -1
-  for instanceNumber, _ := range px.instances {
+  for instanceNumber, _ := range px.state.instances {
     if max < instanceNumber {
       max = instanceNumber
     }
@@ -420,9 +425,9 @@ func (px *Paxos) Max() int {
 // instances.
 // 
 func (px *Paxos) Min() int {
-  min := px.doneNums[0]
+  min := px.state.doneNums[0]
 
-  for _, doneNum := range px.doneNums {
+  for _, doneNum := range px.state.doneNums {
     if doneNum < min {
       min = doneNum
     }
@@ -443,11 +448,11 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
   defer px.mu.Unlock()
   px.mapMu.Lock()
   defer px.mapMu.Unlock()
-  if agreementInstance, ok := px.instances[seq]; ok {
+  if agreementInstance, ok := px.state.instances[seq]; ok {
     // fmt.Println("SEQ ID:", seq, agreementInstance)
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
-    if seq < px.nextInstanceNum {
+    if seq < px.state.nextInstanceNum {
       go px.propose(seq, NoOp{})
     }
 
@@ -477,15 +482,15 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
   px := &Paxos{}
   px.peers = peers
   px.me = me
-  px.doneNums = make([]int, len(px.peers))
+  px.state.doneNums = make([]int, len(px.peers))
 
-  for i := 0; i < len(px.doneNums); i++ {
-    px.doneNums[i] = -1
+  for i := 0; i < len(px.state.doneNums); i++ {
+    px.state.doneNums[i] = -1
   }
 
-  px.instances = make(map[int]*AgreementInstance)
-  px.nextInstanceNum = px.me
-  px.menciusNumWorkers = len(peers)
+  px.state.instances = make(map[int]*AgreementInstance)
+  px.state.nextInstanceNum = px.me
+  px.state.menciusNumWorkers = len(peers)
 
   gob.Register(NoOp{})
 
@@ -495,9 +500,9 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
       px.mu.Lock()
       min := px.Min()
       px.mapMu.Lock()
-      for instanceNum, _ := range px.instances {
+      for instanceNum, _ := range px.state.instances {
         if instanceNum < min {
-          delete(px.instances, instanceNum)
+          delete(px.state.instances, instanceNum)
         }
       }
       px.mapMu.Unlock()

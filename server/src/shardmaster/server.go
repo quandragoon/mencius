@@ -13,7 +13,7 @@ import "math/rand"
 import "math"
 import "time"
 
-const DEBUG = true
+const DEBUG = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if DEBUG {
