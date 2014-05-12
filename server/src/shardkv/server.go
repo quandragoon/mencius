@@ -96,15 +96,16 @@ func (kv *ShardKV) Agreement(op Op) int {
   for {
     to := time.Millisecond
     for {
-      decided, val := kv.px.Status(seqNum)
+      decided, theval := kv.px.Status(seqNum)
       if decided {
-        if reflect.DeepEqual(val.(Op), op) {
+        val, ok := theval.(Op)
+        if ok && reflect.DeepEqual(val, op) {
           // Check if agreed on instance is this instance
           DPrintf("%d [%s %s, %d | %d %d] %d: Agreement %s, %s reached at sequence number %d\n", op.Num, op.OpType, op.Key, key2shard(op.Key), kv.gid, kv.me, op.ClientID, op.Key, op.Value, seqNum)
           return seqNum
         } else {
           // No agreement, have client try again
-          // seqNum = kv.px.Start(seqNum, op)
+          seqNum = kv.px.Start(seqNum, op)
           break
         }
       }
@@ -256,52 +257,55 @@ func (kv *ShardKV) Catchup(seqNum int, opType Type, reconfig bool) {
   DPrintf("%d [%s %d %d] Catching up to sequence number %d\n", kv.config.Num, opType, kv.gid, kv.me, seqNum)
   curSeq := kv.px.Min()
   for curSeq < seqNum {
-    decided, val := kv.px.Status(curSeq)
+    decided, theval := kv.px.Status(curSeq)
     if decided {
-      if val.(Op).OpType == PUT {
-		dbVal, dbOk := kv.readFromKeyValues(kv.config.Num, val.(Op).Key)
-        //dbVal, dbOk := kv.keyvalues[kv.config.Num][val.(Op).Key]
-        newval := ""
-        previousVal := ""
-        if val.(Op).DoHash {
-          curVal, ok := kv.readFromKeyValues(kv.config.Num, val.(Op).Key)
-          //curVal, ok := kv.keyvalues[kv.config.Num][val.(Op).Key]
-          if !ok {
-            curVal = RequestValue{"", 0, time.Now(), 0, 0, ""}
-          }
-          previousVal = curVal.Value
-          newval = strconv.Itoa(int(hash(curVal.Value + val.(Op).Value)))
-        } else {
-          newval = val.(Op).Value
-        }
-
-        if !dbOk {
-          //if (dbVal.ConfigNum < val.(Op).Num && val.(Op).Num <= kv.config.Num) {
-            DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for logged config with previous config %d \n", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, dbVal.ConfigNum)
-            if kv.keyvalues[kv.config.Num] == nil {
-              kv.keyvalues[kv.config.Num] = make(map[string]RequestValue)
+      val, ok := theval.(Op)
+      if ok {
+        if val.OpType == PUT {
+          dbVal, dbOk := kv.readFromKeyValues(kv.config.Num, val.Key)
+          //dbVal, dbOk := kv.keyvalues[kv.config.Num][val.(Op).Key]
+          newval := ""
+          previousVal := ""
+          if val.DoHash {
+            curVal, ok := kv.readFromKeyValues(kv.config.Num, val.Key)
+            //curVal, ok := kv.keyvalues[kv.config.Num][val.(Op).Key]
+            if !ok {
+              curVal = RequestValue{"", 0, time.Now(), 0, 0, ""}
             }
-			rv := RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
-			kv.writeToKeyValues(kv.config.Num, val.(Op).Key, rv)
-            //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
-            kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
-        } else if dbVal.ConfigNum <= kv.config.Num && dbVal.SeqNum < curSeq {
-          if dbVal.RequestTime.Before(val.(Op).RequestTime) { // At most once guarantee
-            DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for config with previous value %s for client %d\n", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, previousVal, val.(Op).ClientID)
-			rv := RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num, val.(Op).Key}
-			kv.writeToKeyValues(kv.config.Num, val.(Op).Key, rv)
-            //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num, val.(Op).Key}
-            kv.putRequests[val.(Op).ClientID] = DuplicatePut{val.(Op).RequestTime, previousVal}
+            previousVal = curVal.Value
+            newval = strconv.Itoa(int(hash(curVal.Value + val.Value)))
           } else {
-            DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered but not executed for config with previous value %s for client %d\n", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, previousVal, val.(Op).ClientID)
+            newval = val.Value
           }
-        } else {
-          DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered but not executed for config with previous config %d\nCurrent config is %d, current sequence # is %d, db sequence # is %d", kv.config.Num, opType, val.(Op).Key, key2shard(val.(Op).Key), kv.gid, kv.me, curSeq, val.(Op).Key, val.(Op).Value, dbVal.ConfigNum, kv.config.Num, curSeq, dbVal.SeqNum)
-        }
-      } else if val.(Op).OpType == RECONFIG {
-        if val.(Op).Num > kv.config.Num && reconfig {
-          DPrintf("%d [%s %d %d] Catch up - Reconfig encountered. Moving to %d\n", kv.config.Num, opType, kv.gid, kv.me, val.(Op).Num)
-          kv.Reconfig(val.(Op).Num, opType, curSeq)
+
+          if !dbOk {
+            //if (dbVal.ConfigNum < val.(Op).Num && val.(Op).Num <= kv.config.Num) {
+              DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for logged config with previous config %d \n", kv.config.Num, opType, val.Key, key2shard(val.Key), kv.gid, kv.me, curSeq, val.Key, val.Value, dbVal.ConfigNum)
+              if kv.keyvalues[kv.config.Num] == nil {
+                kv.keyvalues[kv.config.Num] = make(map[string]RequestValue)
+              }
+              rv := RequestValue{newval, val.ClientID, val.RequestTime, curSeq, kv.config.Num, val.Key}
+              kv.writeToKeyValues(kv.config.Num, val.Key, rv)
+              //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
+              kv.putRequests[val.ClientID] = DuplicatePut{val.RequestTime, previousVal}
+          } else if dbVal.ConfigNum <= kv.config.Num && dbVal.SeqNum < curSeq {
+            if dbVal.RequestTime.Before(val.RequestTime) { // At most once guarantee
+              DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for config with previous value %s for client %d\n", kv.config.Num, opType, val.Key, key2shard(val.Key), kv.gid, kv.me, curSeq, val.Key, val.Value, previousVal, val.ClientID)
+              rv := RequestValue{newval, val.ClientID, val.RequestTime, curSeq, val.Num, val.Key}
+              kv.writeToKeyValues(kv.config.Num, val.Key, rv)
+              //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, val.(Op).Num, val.(Op).Key}
+              kv.putRequests[val.ClientID] = DuplicatePut{val.RequestTime, previousVal}
+            } else {
+              DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered but not executed for config with previous value %s for client %d\n", kv.config.Num, opType, val.Key, key2shard(val.Key), kv.gid, kv.me, curSeq, val.Key, val.Value, previousVal, val.ClientID)
+            }
+          } else {
+            DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered but not executed for config with previous config %d\nCurrent config is %d, current sequence # is %d, db sequence # is %d", kv.config.Num, opType, val.Key, key2shard(val.Key), kv.gid, kv.me, curSeq, val.Key, val.Value, dbVal.ConfigNum, kv.config.Num, curSeq, dbVal.SeqNum)
+          }
+        } else if val.OpType == RECONFIG {
+          if val.Num > kv.config.Num && reconfig {
+            DPrintf("%d [%s %d %d] Catch up - Reconfig encountered. Moving to %d\n", kv.config.Num, opType, kv.gid, kv.me, val.Num)
+            kv.Reconfig(val.Num, opType, curSeq)
+          }
         }
       }
       curSeq++
@@ -483,6 +487,7 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
 // if so, re-configure.
 //
 func (kv *ShardKV) tick() {
+  DPrintf("[TICK %d %d]\n", kv.gid, kv.me)
   curConfig := kv.sm.Query(-1)
   if curConfig.Num > kv.config.Num {
     DPrintf("[TICK %d %d] New config number found: %d, Old: %d\n", kv.gid, kv.me, curConfig.Num, kv.config.Num)

@@ -113,7 +113,7 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
 
         if OpsAreEqual(val, op) {
           // Check if agreed on instance is this instance
-          DPrintf("%s %d: Decided on op with sequence number %d\n", opType, op.GID, curSeqNum)
+          DPrintf("%s %d %d: Decided on op with sequence number %d\n", opType, op.GID, sm.me, curSeqNum)
           return curSeqNum
         } else {
           // No agreement, have client try again
