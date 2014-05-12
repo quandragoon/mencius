@@ -198,7 +198,7 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   if args.IsSuggest {
     for px.state.nextInstanceNum <= args.InstanceNum {
       // fmt.Println(px.state.nextInstanceNum)
-      go px.proposeAcceptPhase(px.state.nextInstanceNum, px.generateProposalNumber(), NoOp{}, false, true)
+      go px.proposeDecidedPhase(px.state.nextInstanceNum, NoOp{})
       px.state.nextInstanceNum += px.state.menciusNumWorkers
     }
   }
