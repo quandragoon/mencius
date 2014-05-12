@@ -15,7 +15,7 @@ func main() {
   flag.IntVar(&port, "portindex", 0, "port for server")
   flag.Parse()
   var smh[]string = make([]string, 3)
-  const IP = "127.0.0.1:"
+  const IP = "0.0.0.0:"
   const nmasters = 3
   for i := 0; i < nmasters; i++ {
     smh[i] = IP + "808" + strconv.Itoa(i)

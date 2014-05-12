@@ -19,7 +19,7 @@ func main() {
 
   const ngroups = 3
   const nreplicas = 3
-  const IP = "127.0.0.1:"
+  const IP = "54.187.210.114:"
   ha := make([][]string, ngroups)
   gids := make([]int64, ngroups)
   for i := 0; i < ngroups; i++ {
@@ -30,9 +30,9 @@ func main() {
     }
   }
   var smh[]string = make([]string, 3)
-  smh[0] = IP + "8080"
-  smh[0] = IP + "8081"
-  smh[0] = IP + "8082"
+  for i := 0; i < ngroups; i++ {
+    smh[i] = IP + "808" + strconv.Itoa(i)
+  }
   kv, rpcs := shardkv.SetupServer(gids[gid], smh, ha[gid], port)
   listener, e := net.Listen("tcp", ha[gid][port]);
   if e != nil {
