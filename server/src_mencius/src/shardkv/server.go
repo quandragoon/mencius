@@ -216,6 +216,7 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
             //time.Sleep(time.Millisecond * 100)
           }
         }
+        time.Sleep(time.Millisecond * 100)
         if updated {
           break outer
         }

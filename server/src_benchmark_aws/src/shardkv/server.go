@@ -208,16 +208,14 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
             }
 
             updated = true
+            break outer
 
             // If updated is true, then the contacted server has config number idx - 1
-            kv.ConfigDone(update.Num, server)
+            // kv.ConfigDone(update.Num, server)
           } else {
             DPrintf("%d [%s %d %d] Group %d server %s had no keys to give for shard %d config %d: %b, %b\n", idx, opType, kv.gid, kv.me, gid, server, shard, update.Num, requestOk, updated)
-            //time.Sleep(time.Millisecond * 100)
           }
-        }
-        if updated {
-          break outer
+          // time.Sleep(time.Millisecond * 100)
         }
         time.Sleep(time.Millisecond * 100)
       }
@@ -228,7 +226,7 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
     }
     DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
     kv.config = newConfig // Not sure about this
-    kv.FreeSnapshots()
+    // kv.FreeSnapshots()
   }
 }
 
@@ -385,7 +383,7 @@ func (kv *ShardKV) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
-  for {
+  for !kv.dead {
     kv.Catchup(kv.px.Max() + 1, UPDATE, true)
 
     if args.Num <= kv.config.Num {
@@ -419,7 +417,7 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
         reply.ClientGet = kv.getRequests
         reply.Err = OK
         // Server contacting this one is done with the config number
-        kv.ConfigDone(args.Num, args.ServerString)
+        // kv.ConfigDone(args.Num, args.ServerString)
         return nil
       }
     }
@@ -437,7 +435,7 @@ func (kv *ShardKV) tick() {
   if curConfig.Num > kv.config.Num {
     DPrintf("[TICK %d %d] New config number found: %d, Old: %d\n", kv.gid, kv.me, curConfig.Num, kv.config.Num)
     kv.mu.Lock()
-    //kv.Catchup(kv.px.Max() + 1, RECONFIG, true)
+    // kv.Catchup(kv.px.Max() + 1, RECONFIG, true)
     
     idx := kv.config.Num + 1
     for idx <= curConfig.Num {

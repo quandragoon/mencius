@@ -79,16 +79,17 @@ func TestBasic(t *testing.T) {
   runtime.GOMAXPROCS(4)
 
   const nservers = 3
-  var sma []*ShardMaster = make([]*ShardMaster, nservers)
+  //var sma []*ShardMaster = make([]*ShardMaster, nservers)
   var kvh []string = make([]string, nservers)
-  defer cleanup(sma)
+  // defer cleanup(sma)
 
   for i := 0; i < nservers; i++ {
-    kvh[i] = port("basic", i)
+    //kvh[i] = port("basic", i)
+    kvh[i] = "54.187.218.121:808" + strconv.Itoa(i)
   }
-  for i := 0; i < nservers; i++ {
-    sma[i] = StartServer(kvh, i)
-  }
+  // for i := 0; i < nservers; i++ {
+  //   sma[i] = StartServer(kvh, i)
+  // }
 
   ck := MakeClerk(kvh)
   var cka [nservers]*Clerk

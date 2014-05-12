@@ -199,6 +199,38 @@ func TestMove(t *testing.T) {
   }
 }
 
+func TestMemory(t *testing.T) {
+  smh, gids, ha, _, clean := setup("limp", false)
+  defer clean()
+
+  fmt.Printf("Test: Observe memory footprint ...\n")
+
+  mck := shardmaster.MakeClerk(smh)
+  mck.Join(gids[0], ha[0])
+
+  ck := MakeClerk(smh)
+
+  runtime.GC()
+  var m0 runtime.MemStats
+  runtime.ReadMemStats(&m0)
+
+  fmt.Printf("Before key values: %d\n", m0.Alloc)
+  LRU_CACHE := 100
+  for i := 0; i < LRU_CACHE; i++ {
+    big := make([]byte, 10000)
+    for j := 0; j < len(big); j++ {
+      big[j] = byte('a' + rand.Int() % 26)
+    }
+    ck.Put(strconv.Itoa(rand.Int()), string(big))
+  }
+
+  runtime.GC()
+  var m1 runtime.MemStats
+  runtime.ReadMemStats(&m1)
+
+  fmt.Printf("After key values: %d\n", m1.Alloc)
+}
+
 func TestLimp(t *testing.T) {
   smh, gids, ha, sa, clean := setup("limp", false)
   defer clean()
@@ -272,8 +304,7 @@ func doConcurrent(t *testing.T, unreliable bool) {
     mck.Join(gids[i], ha[i])
   }
 
-  //const npara = 11
-  const npara = 2
+  const npara = 11
   var ca [npara]chan bool
   for i := 0; i < npara; i++ {
     ca[i] = make(chan bool)

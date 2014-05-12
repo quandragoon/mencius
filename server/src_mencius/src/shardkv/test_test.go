@@ -272,7 +272,6 @@ func doConcurrent(t *testing.T, unreliable bool) {
     mck.Join(gids[i], ha[i])
   }
 
-  //const npara = 11
   const npara = 2
   var ca [npara]chan bool
   for i := 0; i < npara; i++ {

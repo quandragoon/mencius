@@ -117,36 +117,36 @@ func (kv *ShardKV) Agreement(op Op) int {
   }
 }
 
-func (kv *ShardKV) FreeSnapshots() {
-  // Memory management
-  // Update list of servers
-  for gid, servers := range(kv.config.Groups) {
-    for _, server := range(servers) {
-      if _, ok := kv.peersDone[server]; !ok && gid != kv.gid {
-        kv.peersDone[server] = 0;
-      }
-    }
-  }
-  // Update self
-  kv.ConfigDone(kv.config.Num - 1, kv.meString)
+// func (kv *ShardKV) FreeSnapshots() {
+//   // Memory management
+//   // Update list of servers
+//   for gid, servers := range(kv.config.Groups) {
+//     for _, server := range(servers) {
+//       if _, ok := kv.peersDone[server]; !ok && gid != kv.gid {
+//         kv.peersDone[server] = 0;
+//       }
+//     }
+//   }
+//   // Update self
+//   kv.ConfigDone(kv.config.Num - 1, kv.meString)
 
-  // Find min
-  min := math.MaxInt32
-  for _, config := range(kv.peersDone) {
-    if config < min {
-      min = config
-    }
-  }
+//   // Find min
+//   min := math.MaxInt32
+//   for _, config := range(kv.peersDone) {
+//     if config < min {
+//       min = config
+//     }
+//   }
 
-  // Release everything below the min
-  for i := 0; i < min; i++ {
-    if _, ok := kv.keyvalues[i]; ok {
-      kv.keyvalues[i] = nil
-    }
-  }
+//   // Release everything below the min
+//   for i := 0; i < min; i++ {
+//     if _, ok := kv.keyvalues[i]; ok {
+//       kv.keyvalues[i] = nil
+//     }
+//   }
 
-  DPrintf("[%d %d] Min config among peers is %d. %s", kv.gid, kv.me, min, kv.keyvalues[1])
-}
+//   DPrintf("[%d %d] Min config among peers is %d. %s", kv.gid, kv.me, min, kv.keyvalues[1])
+// }
 
 func (kv *ShardKV) ConfigDone(num int, server string) {
   val, ok := kv.peersDone[server]
@@ -162,30 +162,30 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
 //	kv.lruFlushCache()
     DPrintf("[%s %d %d] Starting reconfiguration %d\n", opType, kv.gid, kv.me, newConfig.Num)
     updates := make(map[int]*UpdateArgs)
-    if kv.keyvalues[idx] == nil {
-      kv.keyvalues[idx] = make(map[string]RequestValue)
-    }
-    keyvalues := ""
+    // if kv.keyvalues[idx] == nil {
+    //   kv.keyvalues[idx] = make(map[string]RequestValue)
+    // }
+    // keyvalues := ""
 	keyValuesFromDisk, _ := kv.diskIO.export(idx-1)
     //for k, v := range(kv.keyvalues[idx-1]) {
     for k, v := range(keyValuesFromDisk) {
 	  kv.writeToKeyValues(idx, k, v)
      // kv.keyvalues[idx][k] = v
-      keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
+      // keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
     }
-    DPrintf("[%s %d %d] Keyvalues before reconfiguration for config %d: %s\n", opType, kv.gid, kv.me, idx, keyvalues)
-    if Debug > 0 {
-      shards := ""
-      for i := 0; i < shardmaster.NShards; i++ {
-        shards += strconv.FormatInt(kv.config.Shards[i], 10) + " "
-      }
-      DPrintf("[%s %d %d] Shards %d before: %s\n", opType, kv.gid, kv.me, kv.config.Num, shards)
-      shards = ""
-      for i := 0; i < shardmaster.NShards; i++ {
-        shards += strconv.FormatInt(newConfig.Shards[i], 10) + " "
-      }
-      DPrintf("[%s %d %d] Shards %d after: %s\n", opType, kv.gid, kv.me, newConfig.Num, shards)
-    }
+    // DPrintf("[%s %d %d] Keyvalues before reconfiguration for config %d: %s\n", opType, kv.gid, kv.me, idx, keyvalues)
+    // if Debug > 0 {
+    //   shards := ""
+    //   for i := 0; i < shardmaster.NShards; i++ {
+    //     shards += strconv.FormatInt(kv.config.Shards[i], 10) + " "
+    //   }
+    //   DPrintf("[%s %d %d] Shards %d before: %s\n", opType, kv.gid, kv.me, kv.config.Num, shards)
+    //   shards = ""
+    //   for i := 0; i < shardmaster.NShards; i++ {
+    //     shards += strconv.FormatInt(newConfig.Shards[i], 10) + " "
+    //   }
+    //   DPrintf("[%s %d %d] Shards %d after: %s\n", opType, kv.gid, kv.me, newConfig.Num, shards)
+    // }
 
     for shard, gid := range(newConfig.Shards) {
       if gid == kv.gid && kv.config.Shards[shard] != kv.gid {
@@ -240,16 +240,16 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
         time.Sleep(time.Millisecond * 100)
       }
     }
-    keyvalues = ""
-    for k, v := range(kv.keyvalues[idx]) {
-      keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
-    }
-    DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
+    // keyvalues = ""
+    // for k, v := range(kv.keyvalues[idx]) {
+    //   keyvalues += k + ": " + v.Value + "; Shard " + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
+    // }
+    // DPrintf("[%s %d %d] Updated to config %d, keyvalue now %s\n", opType, kv.gid, kv.me, idx, keyvalues)
     kv.config = newConfig // Not sure about this
 //	fmt.Println(opType, " Writing reconfig to disk: ",kv.me," conf:",newConfig.Num)
 //	kv.diskIO.writeKVMap(idx, kv.keyvalues[idx])
 //	kv.writeStateToDisk()
-    kv.FreeSnapshots()
+    // kv.FreeSnapshots()
   }
 }
 
@@ -281,9 +281,9 @@ func (kv *ShardKV) Catchup(seqNum int, opType Type, reconfig bool) {
           if !dbOk {
             //if (dbVal.ConfigNum < val.(Op).Num && val.(Op).Num <= kv.config.Num) {
               DPrintf("%d [%s %s, %d | %d %d] #%d Catch up - Put %s, %s encountered for logged config with previous config %d \n", kv.config.Num, opType, val.Key, key2shard(val.Key), kv.gid, kv.me, curSeq, val.Key, val.Value, dbVal.ConfigNum)
-              if kv.keyvalues[kv.config.Num] == nil {
-                kv.keyvalues[kv.config.Num] = make(map[string]RequestValue)
-              }
+              // if kv.keyvalues[kv.config.Num] == nil {
+              //   kv.keyvalues[kv.config.Num] = make(map[string]RequestValue)
+              // }
               rv := RequestValue{newval, val.ClientID, val.RequestTime, curSeq, kv.config.Num, val.Key}
               kv.writeToKeyValues(kv.config.Num, val.Key, rv)
               //kv.keyvalues[kv.config.Num][val.(Op).Key] = RequestValue{newval, val.(Op).ClientID, val.(Op).RequestTime, curSeq, kv.config.Num, val.(Op).Key}
@@ -438,11 +438,11 @@ func (kv *ShardKV) Update(args *UpdateArgs, reply *UpdateReply) error {
     if args.Num < kv.config.Num {
       keyvalues := make(map[string]RequestValue)
       keysSent := ""
-      keys := ""
-      for k, v := range(kv.keyvalues[args.Num]) {
-        keys += k + ": " + v.Value + "; Shard" + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
-      }
-      DPrintf("%d [UPDATE %d %d] Key values for server %d from group %d: %s\n", args.Num, kv.gid, kv.me, args.Server, args.Group, keys)
+      // keys := ""
+      // for k, v := range(kv.keyvalues[args.Num]) {
+      //   keys += k + ": " + v.Value + "; Shard" + strconv.Itoa(key2shard(k)) + " Config " + strconv.Itoa(v.ConfigNum) + "\n"
+      // }
+      // DPrintf("%d [UPDATE %d %d] Key values for server %d from group %d: %s\n", args.Num, kv.gid, kv.me, args.Server, args.Group, keys)
 	  kv.diskLock.Lock()
 	  keyvaluesOnDisk,_  := kv.diskIO.export(args.Num)
 	  kv.diskLock.Unlock()
@@ -512,7 +512,7 @@ func (kv *ShardKV) writeToKeyValues(configNum int, key string, rv RequestValue) 
   kv.diskLock.Lock()
   defer kv.diskLock.Unlock()
 
-  kv.keyvalues[configNum][key] = rv
+  // kv.keyvalues[configNum][key] = rv
   rv.ConfigNum = configNum
   kv.lruPut(key, rv)
 //  fmt.Println("pushing to buffer: c: ",configNum,"k: ",key,"v:",rv.Value)
@@ -695,8 +695,8 @@ func StartServer(gid int64, shardmasters []string,
   kv.diskIO.BasePath = "/tmp/Data/" + t.Format("20060102150405")
   kv.diskIO.me = strconv.FormatInt(gid,10)
 
-  kv.keyvalues = make(map[int]map[string]RequestValue)
-  kv.keyvalues[0] = make(map[string]RequestValue)
+  //kv.keyvalues = make(map[int]map[string]RequestValue)
+  //kv.keyvalues[0] = make(map[string]RequestValue)
   kv.getRequests = make(map[int64]DuplicateGet)
   kv.putRequests = make(map[int64]DuplicatePut)
   kv.peersDone = make(map[string]int)
@@ -705,7 +705,7 @@ func StartServer(gid int64, shardmasters []string,
   kv.writeBuffer = list.New()
   kv.lru = list.New()
   kv.lruCache = make(map[string]*list.Element)
-  kv.LRU_SIZE = 20
+  kv.LRU_SIZE = 100
   // Don't call Join().
 
   kv.loadStateFromDisk()

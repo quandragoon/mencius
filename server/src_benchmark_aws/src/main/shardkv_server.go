@@ -20,13 +20,23 @@ func main() {
   const ngroups = 3
   const nreplicas = 3
   const IP = "54.187.210.114:"
+
+  IPS := make([]string, ngroups)
+  IPS[0] = "54.187.166.1"
+  IPS[1] = "54.187.139.234"
+  IPS[2] = "54.187.203.101"
+
   ha := make([][]string, ngroups)
   gids := make([]int64, ngroups)
   for i := 0; i < ngroups; i++ {
     gids[i] = int64(i + 100)
     ha[i] = make([]string, nreplicas)
     for j := 0; j < nreplicas; j++ {
-      ha[i][j] = ":80" + strconv.Itoa(80 + i * ngroups + j + 3)
+      if i == gid {
+        ha[i][j] = "0.0.0.0:808" + strconv.Itoa(j)
+      } else {
+        ha[i][j] = IPS[i] + ":808" + strconv.Itoa(j)
+      }
     }
   }
   var smh[]string = make([]string, 3)
