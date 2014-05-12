@@ -1,0 +1,10 @@
+PASS
+BenchmarkPut	     200	   5316400 ns/op
+BenchmarkConcurrentPut	unexpected EOF
+unexpected EOF
+       5	 463737582 ns/op
+BenchmarkGet	unexpected EOF
+     500	   3738761 ns/op
+BenchmarkPutHash	     200	   5488054 ns/op
+BenchmarkGetAfterJoin	      20	 108809265 ns/op
+ok  	shardkv	21.347s
