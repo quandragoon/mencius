@@ -41,6 +41,7 @@ type Paxos struct {
   peers []string
   me int // index into peers[]
   mapMu sync.Mutex
+  instanceNumMu sync.Mutex
 
   state PaxosState
 
@@ -172,6 +173,8 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
 
+  // fmt.Println("i am", px.me, "and just got a message from", args)
+
   px.mapMu.Lock()
   if _, exist := px.state.instances[args.InstanceNum]; !exist {
     agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
@@ -191,6 +194,7 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
     reply.OK = "reject"
   }
 
+  px.instanceNumMu.Lock()
   if args.IsSuggest {
     for px.state.nextInstanceNum <= args.InstanceNum {
       // fmt.Println(px.state.nextInstanceNum)
@@ -198,6 +202,9 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
       px.state.nextInstanceNum += px.state.menciusNumWorkers
     }
   }
+  px.instanceNumMu.Unlock()
+
+
   reply.DoneNum = px.state.doneNums[px.me]
 
   return nil
@@ -310,9 +317,9 @@ func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue i
 
     px.updateDoneNum(index, acceptReply.DoneNum)
 
-    if num_accepted >= majority {
-      break
-    }
+    // if num_accepted >= majority {
+    //   break
+    // }
   }
 
   // Decided phase
@@ -351,11 +358,11 @@ func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}) {
 // is reached.
 //
 func (px *Paxos) Start(seq int, v interface{}) int {
-  px.mu.Lock()
-  defer px.mu.Unlock()
 
+  px.instanceNumMu.Lock()
   seq = px.state.nextInstanceNum
   px.state.nextInstanceNum += px.state.menciusNumWorkers
+  px.instanceNumMu.Unlock()
 
 
   px.mapMu.Lock()
@@ -444,8 +451,8 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-  px.mu.Lock()
-  defer px.mu.Unlock()
+  px.instanceNumMu.Lock()
+  defer px.instanceNumMu.Unlock()
   px.mapMu.Lock()
   defer px.mapMu.Unlock()
   if agreementInstance, ok := px.state.instances[seq]; ok {
@@ -453,6 +460,7 @@ func (px *Paxos) Status(seq int) (bool, interface{}) {
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
     if seq < px.state.nextInstanceNum {
+      // fmt.Println("BEHIND AND THINKS A SERVER IS DAEAD")
       go px.propose(seq, NoOp{})
     }
 
@@ -494,7 +502,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 
   gob.Register(NoOp{})
 
-  
   go func(){
     for !px.dead{
       px.mu.Lock()
