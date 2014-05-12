@@ -123,7 +123,7 @@ func (sm *ShardMaster) ProposeOp(op Op, seqNum int, opType Type) int {
           op = Op{opType, op.GID, op.Shard, op.Servers}
           curSeqNum = sm.px.Start(curSeqNum, op)
           DPrintf("%s %d: No decision was made! Trying sequence number %d\n", opType, op.GID, curSeqNum)
-          time.Sleep(100*time.Millisecond)
+          // time.Sleep(100*time.Millisecond)
           break
         }
       }

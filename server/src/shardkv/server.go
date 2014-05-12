@@ -104,8 +104,7 @@ func (kv *ShardKV) Agreement(op Op) int {
           return seqNum
         } else {
           // No agreement, have client try again
-          seqNum = kv.px.Max() + 1
-          kv.px.Start(seqNum, op)
+          // seqNum = kv.px.Start(seqNum, op)
           break
         }
       }
@@ -208,8 +207,8 @@ func (kv *ShardKV) Reconfig(idx int, opType Type, seqNum int) {
           requestOk = call(server, "ShardKV.Update", update, &reply)
           if requestOk && reply.Err == OK {
             for k, v := range(reply.KeyValues) {
-			  rv := RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum, k}
-			  kv.writeToKeyValues(idx, k, rv)
+              rv := RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum, k}
+              kv.writeToKeyValues(idx, k, rv)
 //              kv.keyvalues[idx][k] = RequestValue{v.Value, v.ClientID, v.RequestTime, seqNum, v.ConfigNum, k}
             }
 
@@ -342,16 +341,16 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) error {
       kv.Catchup(seqNum, GET, true)
       if kv.config.Shards[key2shard(args.Key)] == kv.gid {
         //testval, _ := kv.keyvalues[kv.config.Num][args.Key]
-		val, ok := kv.readFromKeyValues(kv.config.Num, args.Key)
-//		testval, _ := kv.diskIO.readValue(kv.config.Num, args.Key)
+        val, ok := kv.readFromKeyValues(kv.config.Num, args.Key)
+        // testval, _ := kv.diskIO.readValue(kv.config.Num, args.Key)
         if !ok {
           reply.Err = ErrNoKey
         } else {
           reply.Err = OK
           reply.Value = val.Value
-//		  if (val.Value != testval.Value) {
-//		 	fmt.Println("Check get! ", kv.config.Num, " key: ", args.Key, " memval: ", val.Value, " diskval: ",testval.Value)
-//		  }
+          // if (val.Value != testval.Value) {
+          // fmt.Println("Check get! ", kv.config.Num, " key: ", args.Key, " memval: ", val.Value, " diskval: ",testval.Value)
+        // }
           DPrintf("%d [GET %s, %d | %d %d] %d: Returning %s for key %s\n", kv.config.Num, args.Key, key2shard(args.Key),kv.gid, kv.me, args.ClientID, val.Value, args.Key)
         }
         kv.px.Done(seqNum)
