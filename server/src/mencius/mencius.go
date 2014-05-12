@@ -84,7 +84,6 @@ type Accept struct {
   ProposalNum int64
   ValAccept interface{}
   IsSuggest bool
-  IsSkip bool
 }
 
 type AcceptOK struct {
@@ -197,7 +196,6 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.instanceNumMu.Lock()
   if args.IsSuggest {
     for px.state.nextInstanceNum <= args.InstanceNum {
-      // fmt.Println(px.state.nextInstanceNum)
       go px.proposeDecidedPhase(px.state.nextInstanceNum, NoOp{})
       px.state.nextInstanceNum += px.state.menciusNumWorkers
     }
@@ -290,19 +288,19 @@ func (px *Paxos) propose(seq int, v interface{}) {
         acceptValue = highestValue
       }
 
-      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue, false, false)
+      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue, false)
     }
   }
 }
 
-func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}, isSuggest bool, isSkip bool) bool {
+func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}, isSuggest bool) bool {
   majority := (len(px.peers) / 2) + 1
   num_accepted := 0
   decided := false
 
   // send accepts
   for index, peer := range px.peers {
-    acceptMsg := Accept{seq, proposalNumber, acceptValue, isSuggest, isSkip}
+    acceptMsg := Accept{seq, proposalNumber, acceptValue, isSuggest}
     var acceptReply AcceptOK
 
     if index == px.me {
@@ -372,7 +370,7 @@ func (px *Paxos) Start(seq int, v interface{}) int {
   }
   px.mapMu.Unlock()
 
-  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v, true, false)
+  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v, true)
 
   return seq
 }
