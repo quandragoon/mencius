@@ -41,28 +41,12 @@ type Paxos struct {
   peers []string
   me int // index into peers[]
   instances map[int]*AgreementInstance
-  instancesMapMu sync.Mutex
-
-  instanceNumMu sync.Mutex
+  mapMu sync.Mutex
 
   doneNums []int // array representing each peer's doneNum
-  currentInstanceNum int
+  nextInstanceNum int
   menciusNumWorkers int
-  hasIncomingOp bool
 }
-
-
-type Type string
-
-type Op struct {
-  // Your data here.
-  Type Type
-  GID int64
-  //Num int
-  Shard int
-  Servers []string
-}
-
 
 type AgreementInstance struct {
   InstanceNum int
@@ -93,6 +77,8 @@ type Accept struct {
   InstanceNum int
   ProposalNum int64
   ValAccept interface{}
+  IsSuggest bool
+  IsSkip bool
 }
 
 type AcceptOK struct {
@@ -113,15 +99,6 @@ type DecidedOK struct {
 
 type NoOp struct {
   Name string
-}
-
-
-
-func mod (x int, y int) int {
-  if x == -1 {
-    return y - 1
-  }
-  return x % y
 }
 
 //
@@ -160,31 +137,19 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
   return false
 }
 
-func (px *Paxos) makeNewAgreementInstance(instanceNum int) AgreementInstance {
-  return AgreementInstance{InstanceNum: instanceNum, 
-                           Decided: false,
-                           N_Prepare: -1,
-                           N_Accept: -1,
-                           V_Accept: nil,
-                           DecidedVal: nil}
-}
-
 func (px *Paxos) PrepareHandler(args *Prepare, reply *PrepareOK) error {
-  // fmt.Println("PrepareHandler in ", px.me, args.InstanceNum)
   px.mu.Lock()
   defer px.mu.Unlock()
 
-
-  px.instancesMapMu.Lock()
+  px.mapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
-    agreementInstance := px.makeNewAgreementInstance(args.InstanceNum)
+    agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
     px.instances[args.InstanceNum] = &agreementInstance
   }
-  agreementInstance := px.instances[args.InstanceNum]
-  px.instancesMapMu.Unlock()
 
-  if args.ProposalNum > agreementInstance.N_Prepare &&
-     !agreementInstance.Decided {
+  agreementInstance := px.instances[args.InstanceNum]
+  px.mapMu.Unlock()
+  if args.ProposalNum > agreementInstance.N_Prepare {
     agreementInstance.N_Prepare = args.ProposalNum
     reply.OK = "ok"
     reply.ProposalNumAccept = agreementInstance.N_Accept
@@ -202,17 +167,16 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  px.instancesMapMu.Lock()
+  px.mapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
-    agreementInstance := px.makeNewAgreementInstance(args.InstanceNum)
+    agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
     px.instances[args.InstanceNum] = &agreementInstance
   }
 
 
   agreementInstance := px.instances[args.InstanceNum]
-  px.instancesMapMu.Unlock()
-  if args.ProposalNum >= agreementInstance.N_Prepare &&
-     !agreementInstance.Decided {
+  px.mapMu.Unlock()
+  if args.ProposalNum >= agreementInstance.N_Prepare {
     agreementInstance.N_Prepare = args.ProposalNum
     agreementInstance.N_Accept = args.ProposalNum
     agreementInstance.V_Accept = args.ValAccept
@@ -222,6 +186,13 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
     reply.OK = "reject"
   }
 
+  if args.IsSuggest {
+    for px.nextInstanceNum <= args.InstanceNum {
+      // fmt.Println(px.nextInstanceNum)
+      go px.proposeAcceptPhase(px.nextInstanceNum, px.generateProposalNumber(), NoOp{}, false, true)
+      px.nextInstanceNum += px.menciusNumWorkers
+    }
+  }
   reply.DoneNum = px.doneNums[px.me]
 
   return nil
@@ -231,32 +202,20 @@ func (px *Paxos) DecidedHandler(args *Decided, reply *DecidedOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  px.instancesMapMu.Lock()
+  px.mapMu.Lock()
   if _, exist := px.instances[args.InstanceNum]; !exist {
-    agreementInstance := px.makeNewAgreementInstance(args.InstanceNum)
+    agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
     px.instances[args.InstanceNum] = &agreementInstance
   }
-  agreementInstance := px.instances[args.InstanceNum]
-  px.instancesMapMu.Unlock()
 
-  px.instanceNumMu.Lock() 
-  if px.currentInstanceNum < args.InstanceNum + 1 {
-    px.currentInstanceNum = args.InstanceNum + 1
-  }
-  px.instanceNumMu.Unlock()
+  agreementInstance := px.instances[args.InstanceNum]
+  px.mapMu.Unlock()
+
 
   agreementInstance.Decided = true
   agreementInstance.DecidedVal = args.Val_Decided
 
   reply.DoneNum = px.doneNums[px.me]
-
-
-
-  // fmt.Println("decided")
-  // fmt.Println("---------------")
-  // fmt.Println(px.me)
-  // fmt.Println(px.currentInstanceNum)
-  // fmt.Println(agreementInstance.DecidedVal)
 
   return nil
 }
@@ -276,7 +235,6 @@ func (px *Paxos) propose(seq int, v interface{}) {
   decided := false
 
   for !decided && !px.dead{
-    // time.Sleep(100 * time.Millisecond)
     // generate higher and unique proposalNumber
     proposalNumber := px.generateProposalNumber()
 
@@ -285,16 +243,13 @@ func (px *Paxos) propose(seq int, v interface{}) {
 
     // Send prepares
     for index, peer := range px.peers {
-      // fmt.Println("Peer index: ", index, peer)
       prepareMsg := Prepare{seq, proposalNumber}
       var prepareReply PrepareOK
 
       if index == px.me {
         px.PrepareHandler(&prepareMsg, &prepareReply)
       } else {
-        // fmt.Println("SENDING TO: ", peer, px.peers)
         call(peer, "Paxos.PrepareHandler", prepareMsg, &prepareReply)
-        // fmt.Println("Call ok: ", ok, peer)
       }
 
       prepareReplies[index] = prepareReply
@@ -323,19 +278,19 @@ func (px *Paxos) propose(seq int, v interface{}) {
         acceptValue = highestValue
       }
 
-      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue)
+      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue, false, false)
     }
   }
 }
 
-func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}) bool {
+func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}, isSuggest bool, isSkip bool) bool {
   majority := (len(px.peers) / 2) + 1
   num_accepted := 0
   decided := false
 
   // send accepts
   for index, peer := range px.peers {
-    acceptMsg := Accept{seq, proposalNumber, acceptValue}
+    acceptMsg := Accept{seq, proposalNumber, acceptValue, isSuggest, isSkip}
     var acceptReply AcceptOK
 
     if index == px.me {
@@ -354,7 +309,6 @@ func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue i
       break
     }
   }
-
 
   // Decided phase
   if num_accepted >= majority {
@@ -384,27 +338,6 @@ func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}) {
   }
 }
 
-
-
-
-func (px *Paxos) ProposeSeq (seq int, v interface{}) {
-  px.mu.Lock()
-  defer px.mu.Unlock()
-
-  if px.Min() <= seq{
-    agreed, _ := px.Status(seq)
-    if agreed{
-      return
-    }
-    go px.propose(seq, v)
-  }
-
-  return
-} 
-
-
-
-
 //
 // the application wants paxos to start agreement on
 // instance seq, with proposed value v.
@@ -412,81 +345,24 @@ func (px *Paxos) ProposeSeq (seq int, v interface{}) {
 // call Status() to find out if/when agreement
 // is reached.
 //
-func (px *Paxos) Start(seq int, v interface{}) int{
+func (px *Paxos) Start(seq int, v interface{}) int {
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  // px.instancesMapMu.Lock()
-  // if _, exist := px.instances[seq]; !exist {
-  //   agreementInstance := px.makeNewAgreementInstance(seq)
-  //   px.instances[seq] = &agreementInstance
-  // }
-  // px.instancesMapMu.Unlock()
+  seq = px.nextInstanceNum
+  px.nextInstanceNum += px.menciusNumWorkers
 
 
-  deadServerTimeout := 10
-  sleepTime := 2
-  totalWait := 0
-  px.hasIncomingOp = true
-
-  currNum := px.currentInstanceNum
-
-  for mod(currNum, px.menciusNumWorkers) != px.me {
-    px.instancesMapMu.Lock()
-    if _, exist := px.instances[currNum]; !exist {
-      agreementInstance := px.makeNewAgreementInstance(currNum)
-      px.instances[currNum] = &agreementInstance
-    }
-    px.instancesMapMu.Unlock()
-
-    if px.instances[currNum].Decided {
-      currNum += 1
-      totalWait = 0
-    } else {
-      time.Sleep(time.Duration(sleepTime) * time.Millisecond)
-      totalWait += sleepTime
-
-      if totalWait >= deadServerTimeout {
-        // do a normal no-op
-        // fmt.Println("propose in Start", px.me)
-        go px.propose(currNum, Op{"", 0, -1, []string{}}) // change this to parameterize no-op
-
-        currNum += 1
-        totalWait = 0
-      }
-    }
+  px.mapMu.Lock()
+  if _, exist := px.instances[seq]; !exist {
+    agreementInstance := AgreementInstance{seq, false, -1, -1, nil, nil}
+    px.instances[seq] = &agreementInstance
   }
+  px.mapMu.Unlock()
 
-  go px.proposeAcceptPhase(currNum, px.generateProposalNumber(), v)
-  px.hasIncomingOp = false
+  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v, true, false)
 
-  px.instanceNumMu.Lock()
-  if px.currentInstanceNum < currNum{
-    px.currentInstanceNum = currNum
-  }
-  currNum = px.currentInstanceNum
-  px.instanceNumMu.Unlock()
-
-  return currNum
-}
-
-func (px *Paxos) MenciusBackgroundThread() {
-  for !px.dead {
-    // fmt.Println("Current Instance Number: ", px.currentInstanceNum)
-    px.instanceNumMu.Lock()
-    // fmt.Println("Background: ", px.instances[1])
-    if mod(px.currentInstanceNum, px.menciusNumWorkers) == px.me &&
-       !px.hasIncomingOp{
-
-      // do a skip
-      go px.proposeDecidedPhase(px.currentInstanceNum, Op{"", 0, -1, []string{}}) // parameterize no-op
-      px.currentInstanceNum += 1
-      px.instanceNumMu.Unlock()
-    } else {
-      px.instanceNumMu.Unlock()
-      time.Sleep(100 * time.Millisecond)
-    }
-  }
+  return seq
 }
 
 //
@@ -563,15 +439,18 @@ func (px *Paxos) Min() int {
 // it should not contact other Paxos peers.
 //
 func (px *Paxos) Status(seq int) (bool, interface{}) {
-  px.instancesMapMu.Lock()
-  defer px.instancesMapMu.Unlock()
+  px.mu.Lock()
+  defer px.mu.Unlock()
+  px.mapMu.Lock()
+  defer px.mapMu.Unlock()
   if agreementInstance, ok := px.instances[seq]; ok {
-    // fmt.Println("NOT HOLE", px.instances[seq])
-    // if (!agreementInstance.Decided) {
-    //   go px.propose(seq, Op{"", 0, -1, []string{}})
-    // }
+    // fmt.Println("SEQ ID:", seq, agreementInstance)
     return agreementInstance.Decided, agreementInstance.DecidedVal
   } else {
+    if seq < px.nextInstanceNum {
+      go px.propose(seq, NoOp{})
+    }
+
     return false, nil
   }
 }
@@ -595,7 +474,6 @@ func (px *Paxos) Kill() {
 // are in peers[]. this servers port is peers[me].
 //
 func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
-
   px := &Paxos{}
   px.peers = peers
   px.me = me
@@ -606,29 +484,26 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
   }
 
   px.instances = make(map[int]*AgreementInstance)
-  px.currentInstanceNum = -1
+  px.nextInstanceNum = px.me
   px.menciusNumWorkers = len(peers)
-  px.hasIncomingOp = false
 
   gob.Register(NoOp{})
-  gob.Register(Op{})
 
-  go px.MenciusBackgroundThread()
   
   go func(){
     for !px.dead{
       px.mu.Lock()
       min := px.Min()
-      px.instancesMapMu.Lock()
+      px.mapMu.Lock()
       for instanceNum, _ := range px.instances {
         if instanceNum < min {
           delete(px.instances, instanceNum)
         }
       }
-      px.instancesMapMu.Unlock()
+      px.mapMu.Unlock()
       px.mu.Unlock()
 
-      time.Sleep(10*time.Millisecond)
+      time.Sleep(100*time.Millisecond)
     }
   }()
 

@@ -141,6 +141,7 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
   curSeq := sm.px.Min()
   for curSeq < seqNum {
     decided, val := sm.px.Status(curSeq)
+    // time.Sleep(100*time.Millisecond)
     if decided {
       val, ok := val.(Op)
       if ok && val.Type != QUERY && val.Type != ""{ // Don't care about QUERY ops
@@ -160,9 +161,10 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
       curSeq++
     } else {
       if curSeq >= sm.px.Min() {
+        // fmt.Println("IN HEREEEE")
         DPrintf("%s %d: Sequence number %d not decided yet, waiting...\n", opType, GID, curSeq)
-        noOp := Op{"", 0, -1, []string{}}
-        sm.px.ProposeSeq(curSeq, noOp)
+        // noOp := Op{"", 0, -1, []string{}}
+        // sm.px.Start(curSeq, noOp)
         to := time.Millisecond
         for {
           decided, _ := sm.px.Status(curSeq)
