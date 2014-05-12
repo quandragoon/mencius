@@ -1,30 +1,8 @@
 PASS
-BenchmarkPut	unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-     200	   8770610 ns/op
-BenchmarkConcurrentPut	write unix /var/tmp/824-501/skv-64713-concfalses-7: broken pipe
-       1	1377652195 ns/op
-BenchmarkGet	unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-     200	   7783677 ns/op
-BenchmarkPutHash	unexpected EOF
-write unix /var/tmp/824-501/skv-64713-basicm-0: broken pipe
-unexpected EOF
-     200	   9094052 ns/op
-unexpected EOF
-BenchmarkGetAfterJoin	unexpected EOF
-write unix /var/tmp/824-501/skv-64713-basics-1: broken pipe
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
-unexpected EOF
+BenchmarkPut	     200	   5675701 ns/op
+BenchmarkConcurrentPut	       1	2157594134 ns/op
+BenchmarkGet	     500	   4313949 ns/op
+BenchmarkPutHash	     200	   5804909 ns/op
+BenchmarkGetAfterJoin	write unix /var/tmp/824-501/skv-67686-basics-2: broken pipe
+      20	 108251476 ns/op
+ok  	shardkv	20.805s

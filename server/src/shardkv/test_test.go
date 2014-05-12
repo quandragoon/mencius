@@ -215,13 +215,14 @@ func TestMemory(t *testing.T) {
   runtime.ReadMemStats(&m0)
 
   fmt.Printf("Before key values: %d\n", m0.Alloc)
-  LRU_CACHE := 100
+  LRU_CACHE := 500
   for i := 0; i < LRU_CACHE; i++ {
     big := make([]byte, 10000)
     for j := 0; j < len(big); j++ {
       big[j] = byte('a' + rand.Int() % 26)
     }
     ck.Put(strconv.Itoa(rand.Int()), string(big))
+    time.Sleep(10 * time.Millisecond)
   }
 
   runtime.GC()

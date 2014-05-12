@@ -11,7 +11,7 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
-import "math"
+// import "math"
 import "shardmaster"
 import "strconv"
 import "reflect"
@@ -72,13 +72,13 @@ type ShardKV struct {
   diskIO DiskIO
 
   meString string
-  keyvalues map[int]map[string]RequestValue // Map of viewnums to keyvalues
+  // keyvalues map[int]map[string]RequestValue // Map of viewnums to keyvalues
   putRequests map[int64]DuplicatePut
   getRequests map[int64]DuplicateGet
   config shardmaster.Config
   peersDone map[string]int
   writeBuffer *list.List
-  writeBufLock sync.Mutex
+  // writeBufLock sync.Mutex
   lru *list.List
   lruCache map[string]*list.Element
   LRU_SIZE int
