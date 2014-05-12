@@ -84,7 +84,7 @@ type Accept struct {
   ProposalNum int64
   ValAccept interface{}
   IsSuggest bool
-  IsSkip bool
+  Me int
 }
 
 type AcceptOK struct {
@@ -92,6 +92,8 @@ type AcceptOK struct {
   OK string
   Num int64
   DoneNum int // piggybacked
+  SkipLow int
+  SkipHigh int
 }
 
 type Decided struct {
@@ -173,8 +175,6 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
   px.mu.Lock()
   defer px.mu.Unlock()
 
-  // fmt.Println("i am", px.me, "and just got a message from", args)
-
   px.mapMu.Lock()
   if _, exist := px.state.instances[args.InstanceNum]; !exist {
     agreementInstance := AgreementInstance{args.InstanceNum, false, -1, -1, nil, nil}
@@ -194,16 +194,28 @@ func (px *Paxos) AcceptHandler(args *Accept, reply *AcceptOK) error {
     reply.OK = "reject"
   }
 
+  reply.SkipLow = -1
+  reply.SkipHigh = -1
+
   px.instanceNumMu.Lock()
   if args.IsSuggest {
+    skipLow := -1
+    skipHigh := -1
+
+    if px.state.nextInstanceNum <= args.InstanceNum {
+      skipLow = px.state.nextInstanceNum
+    }
+
     for px.state.nextInstanceNum <= args.InstanceNum {
-      // fmt.Println(px.state.nextInstanceNum)
-      go px.proposeAcceptPhase(px.state.nextInstanceNum, px.generateProposalNumber(), NoOp{}, false, true)
+      go px.proposeDecidedPhase(px.state.nextInstanceNum, NoOp{}, args.Me)
+      skipHigh = px.state.nextInstanceNum
       px.state.nextInstanceNum += px.state.menciusNumWorkers
     }
+
+    reply.SkipLow = skipLow
+    reply.SkipHigh = skipHigh
   }
   px.instanceNumMu.Unlock()
-
 
   reply.DoneNum = px.state.doneNums[px.me]
 
@@ -290,19 +302,19 @@ func (px *Paxos) propose(seq int, v interface{}) {
         acceptValue = highestValue
       }
 
-      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue, false, false)
+      decided = px.proposeAcceptPhase(seq, proposalNumber, acceptValue, false)
     }
   }
 }
 
-func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}, isSuggest bool, isSkip bool) bool {
+func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue interface{}, isSuggest bool) bool {
   majority := (len(px.peers) / 2) + 1
   num_accepted := 0
   decided := false
 
   // send accepts
   for index, peer := range px.peers {
-    acceptMsg := Accept{seq, proposalNumber, acceptValue, isSuggest, isSkip}
+    acceptMsg := Accept{seq, proposalNumber, acceptValue, isSuggest, px.me}
     var acceptReply AcceptOK
 
     if index == px.me {
@@ -313,30 +325,43 @@ func (px *Paxos) proposeAcceptPhase(seq int, proposalNumber int64, acceptValue i
 
     if acceptReply.OK == "ok" {
       num_accepted += 1
+
+      if acceptReply.SkipHigh >= 0 &&
+         acceptReply.SkipLow >= 0 &&
+         acceptReply.SkipLow <= acceptReply.SkipHigh {
+        currSeq := acceptReply.SkipLow
+        for currSeq <= acceptReply.SkipHigh {
+          decidedMsg := Decided{currSeq, NoOp{}}
+          var decidedReply DecidedOK
+          // px.updateDoneNum(i)
+          px.DecidedHandler(&decidedMsg, &decidedReply)
+          currSeq += px.state.menciusNumWorkers
+        }
+      }
     }
 
     px.updateDoneNum(index, acceptReply.DoneNum)
-
-    // if num_accepted >= majority {
-    //   break
-    // }
   }
 
   // Decided phase
   if num_accepted >= majority {
     decided = true
-    px.proposeDecidedPhase(seq, acceptValue)
+    px.proposeDecidedPhase(seq, acceptValue, -1)
   }
 
   return decided
 
 }
 
-func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}) {
+func (px *Paxos) proposeDecidedPhase(seq int, decidedValue interface{}, dontSendTo int) {
   // decided := true
   // decidedValue := acceptValue
 
   for index, peer := range px.peers {
+    if index == dontSendTo {
+      continue
+    }
+
     decidedMsg := Decided{seq, decidedValue}
     var decidedReply DecidedOK
 
@@ -372,7 +397,7 @@ func (px *Paxos) Start(seq int, v interface{}) int {
   }
   px.mapMu.Unlock()
 
-  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v, true, false)
+  go px.proposeAcceptPhase(seq, px.generateProposalNumber(), v, true)
 
   return seq
 }
