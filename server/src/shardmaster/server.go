@@ -13,7 +13,7 @@ import "math/rand"
 import "math"
 import "time"
 
-const DEBUG = false
+const DEBUG = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
   if DEBUG {
@@ -163,8 +163,8 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
       if curSeq >= sm.px.Min() {
         // fmt.Println("IN HEREEEE")
         DPrintf("%s %d: Sequence number %d not decided yet, waiting...\n", opType, GID, curSeq)
-        // noOp := Op{"", 0, -1, []string{}}
-        // sm.px.Start(curSeq, noOp)
+        noOp := Op{"", 0, -1, []string{}}
+        sm.px.Start(curSeq, noOp)
         to := time.Millisecond
         for {
           decided, _ := sm.px.Status(curSeq)
@@ -172,13 +172,13 @@ func (sm *ShardMaster) Catchup(seqNum int, opType Type, GID int64) {
           if decided {
             break
           }
-          curSeq++
+          //curSeq++
           time.Sleep(to)
           if to < 10 * time.Second {
             to *= 2
           }
         }
-        time.Sleep(100*time.Millisecond)
+        // time.Sleep(100*time.Millisecond)
       } else {
         curSeq++
       }
